@@ -12,7 +12,7 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().default(7),
   REDIS_URL: z.string().min(1),
-  AI_SERVICE_URL: z.string().url().default("http://ai-service:8000"),
+  AI_SERVICE_URL: z.string().min(1).default("http://ai-service:8000"),
   CORS_ORIGIN: z.string().default("*"),
   FIELD_ENCRYPTION_KEY: z.string().optional(),
   UDISE_CSV_PATH: z.string().optional()

@@ -26,6 +26,9 @@ export interface RiskResponse {
   source: "ai-service" | "fallback";
 }
 
+const toAiBaseUrl = (value: string): string =>
+  /^https?:\/\//i.test(value) ? value : `http://${value}`;
+
 const bmiFactor = (bmi: number): number => {
   if (bmi < 16.5) return 1.0;
   if (bmi < 18.5) return 0.7;
@@ -108,7 +111,7 @@ const fallbackRiskScore = (payload: RiskInput): RiskResponse => {
 
 export const calculateRisk = async (payload: RiskInput): Promise<RiskResponse> => {
   try {
-    const response = await axios.post<RiskResponse>(`${env.AI_SERVICE_URL}/calculate-risk`, payload, {
+    const response = await axios.post<RiskResponse>(`${toAiBaseUrl(env.AI_SERVICE_URL)}/calculate-risk`, payload, {
       timeout: 5000
     });
     const data = response.data;

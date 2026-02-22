@@ -1,0 +1,64 @@
+services:
+  - type: web
+    name: swasthyasetu-ai
+    runtime: docker
+    dockerContext: ./ai-service
+    dockerfilePath: ./ai-service/Dockerfile
+    plan: free
+    healthCheckPath: /health
+
+  - type: web
+    name: swasthyasetu-backend
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        fromDatabase:
+          name: swasthyasetu-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: swasthyasetu-redis
+          property: connectionString
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: swasthyasetu-ai
+          property: hostport
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_DAYS
+        value: 7
+      - key: CORS_ORIGIN
+        value: "*"
+
+  - type: web
+    name: swasthyasetu-frontend
+    runtime: docker
+    dockerContext: ./frontend
+    dockerfilePath: ./frontend/Dockerfile
+    plan: free
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://REPLACE_WITH_BACKEND_URL
+
+  - type: keyvalue
+    name: swasthyasetu-redis
+    plan: free
+    ipAllowList: []
+
+databases:
+  - name: swasthyasetu-db
+    plan: free
