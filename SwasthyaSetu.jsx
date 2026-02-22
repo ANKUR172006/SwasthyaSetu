@@ -42,7 +42,11 @@ const ROLES = {
   PARENT: "parent",
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const hasPlaceholderApiUrl = /replace_with_backend_url/i.test(rawApiBaseUrl);
+const API_BASE_URL = rawApiBaseUrl && !hasPlaceholderApiUrl
+  ? rawApiBaseUrl
+  : (import.meta.env.DEV ? "http://localhost:8080" : "https://swasthyasetu-backend.onrender.com");
 
 const ROLE_LOGIN_MAP = {
   [ROLES.SUPER_ADMIN]: { email: "superadmin@swasthyasetu.in", password: "Admin@1234" },

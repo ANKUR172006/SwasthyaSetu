@@ -1,5 +1,5 @@
 ﻿/**
- * SwasthyaSetu - Green Bharat School Intelligence Platform
+ * SwasthyaSetu – Green Bharat School Intelligence Platform
  * A comprehensive school health & sustainability monitoring dashboard
  * Built with React, Tailwind-compatible inline styles, Recharts, Lucide React
  * 
@@ -42,7 +42,11 @@ const ROLES = {
   PARENT: "parent",
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const hasPlaceholderApiUrl = /replace_with_backend_url/i.test(rawApiBaseUrl);
+const API_BASE_URL = rawApiBaseUrl && !hasPlaceholderApiUrl
+  ? rawApiBaseUrl
+  : (import.meta.env.DEV ? "http://localhost:8080" : "https://swasthyasetu-backend.onrender.com");
 
 const ROLE_LOGIN_MAP = {
   [ROLES.SUPER_ADMIN]: { email: "superadmin@swasthyasetu.in", password: "Admin@1234" },
@@ -180,20 +184,8 @@ const mapBackendStudent = (student, idx = 0) => {
     parentPhone: `98${String(10000000 + idx * 137).slice(0, 8)}`,
     address: "Ward-level school catchment, India",
     photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`,
-    riskExplanation: student.riskExplanation || null
   };
 };
-
-const mapReasonCodeLabel = (code) =>
-  ({
-    BMI_OUT_OF_HEALTHY_RANGE: "BMI outside healthy range",
-    VACCINATION_DELAY_OR_INCOMPLETE: "Vaccination delay or incomplete status",
-    LOW_ATTENDANCE_PATTERN: "Low attendance pattern observed",
-    HEAT_STRESS_RISK: "Heat stress risk",
-    AIR_QUALITY_EXPOSURE: "Air quality exposure",
-    HIGH_COMPOSITE_RISK: "High combined health risk",
-    BASELINE_LOW_RISK: "No major risk driver detected"
-  }[code] || code);
 
 const mapBackendCamp = (camp) => ({
   id: camp.id,
@@ -340,7 +332,7 @@ const Badge = ({ color = "blue", children, size = "sm" }) => {
 
 const RiskBadge = ({ risk }) => {
   const map = { Low: "green", Medium: "yellow", High: "red" };
-  return <Badge color={map[risk] || "blue"}>{risk === "High" ? "! " : ""}{risk} Risk</Badge>;
+  return <Badge color={map[risk] || "blue"}>{risk === "High" ? "⚠ " : ""}{risk} Risk</Badge>;
 };
 
 const StatCard = ({ icon: Icon, label, value, change, color = "#1e40af", bg, sub, onClick }) => {
@@ -473,7 +465,7 @@ const LoginPage = () => {
             <p style={{ fontSize: "11px", color: "#1e40af", fontWeight: 600, letterSpacing: "0.05em" }}>GREEN BHARAT SCHOOL INTELLIGENCE PLATFORM</p>
           </div>
         </div>
-        <p style={{ color: darkMode ? "#94a3b8" : "#64748b", fontSize: "13px" }}>Government of India - Ministry of Education & Health</p>
+        <p style={{ color: darkMode ? "#94a3b8" : "#64748b", fontSize: "13px" }}>Government of India — Ministry of Education & Health</p>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginTop: "8px" }}>
           <span style={{ height: "3px", width: "50px", background: "#ff9933", borderRadius: "2px" }} />
           <span style={{ height: "3px", width: "50px", background: "#ffffff", border: "1px solid #ddd", borderRadius: "2px" }} />
@@ -484,7 +476,7 @@ const LoginPage = () => {
       {/* Role Selection */}
       <div style={{ background: th.card, borderRadius: "16px", padding: "32px", boxShadow: "0 4px 24px rgba(0,0,0,0.08)", border: `1px solid ${th.cardBorder}`, maxWidth: "640px", width: "100%" }}>
         <h2 style={{ color: th.text, fontSize: "16px", fontWeight: 700, marginBottom: "6px", textAlign: "center" }}>Select Your Role to Continue</h2>
-        <p style={{ color: th.textMuted, fontSize: "12px", textAlign: "center", marginBottom: "24px" }}>Demo Mode - Click any role to preview the dashboard</p>
+        <p style={{ color: th.textMuted, fontSize: "12px", textAlign: "center", marginBottom: "24px" }}>Demo Mode — Click any role to preview the dashboard</p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "12px", marginBottom: "24px" }}>
           {roleCards.map(rc => (
@@ -513,7 +505,7 @@ const LoginPage = () => {
 
         {error && <p style={{ textAlign: "center", color: "#dc2626", fontSize: "12px", marginTop: "12px" }}>{error}</p>}
         <p style={{ textAlign: "center", color: th.textMuted, fontSize: "11px", marginTop: "16px" }}>
-          Secured by Digital India & NIC Infrastructure
+          🔒 Secured by Digital India & NIC Infrastructure
         </p>
       </div>
     </div>
@@ -586,7 +578,7 @@ const Sidebar = ({ collapsed, setCollapsed, activePage, setActivePage }) => {
       </nav>
 
       {/* User + Logout */}
-      <div style={{ padding: "12px 8px", marginBottom: "10px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+      <div style={{ padding: "12px 8px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         {!collapsed && (
           <div style={{ padding: "10px 12px", marginBottom: "8px" }}>
             <p style={{ color: "#fff", fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</p>
@@ -678,7 +670,7 @@ const SchoolAdminDashboard = () => {
         <div style={{ background: "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: "12px", padding: "14px 20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "12px", animation: "pulse 2s infinite" }}>
           <AlertTriangle size={22} color="#fff" />
           <div style={{ flex: 1 }}>
-            <p style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>ALERT: EMERGENCY ALERT - {highRisk.length} Students at HIGH RISK</p>
+            <p style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>🚨 EMERGENCY ALERT — {highRisk.length} Students at HIGH RISK</p>
             <p style={{ color: "#fecaca", fontSize: "12px" }}>Immediate health screening required. Parents have been notified.</p>
           </div>
           <button style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "6px", padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}>View All</button>
@@ -786,7 +778,7 @@ const TeacherDashboard = () => {
           </div>
         </Card>
 
-        <Card title="Risk Distribution - Class 6A">
+        <Card title="Risk Distribution — Class 6A">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={[
               { name: "Low Risk", count: riskCount.Low, fill: "#22c55e" },
@@ -838,96 +830,6 @@ const ParentDashboard = () => {
   const { darkMode, studentsData = students, callParent } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const child = studentsData[0] || students[46];
-  const childReasons = Array.isArray(child?.riskExplanation?.reason_codes) ? child.riskExplanation.reason_codes : [];
-  const childCondition = String(child?.condition || "Healthy").toLowerCase();
-
-  const getParentAdvice = () => {
-    let dietTips = [
-      "Give balanced meals with dal, vegetables, fruits and adequate water.",
-      "Prefer home-cooked food; reduce packaged snacks and sugary drinks.",
-      "Include one seasonal fruit and one protein source daily."
-    ];
-    let careTips = [
-      "Ensure 8-10 hours of sleep and daily outdoor activity.",
-      "Track temperature, appetite and fatigue weekly.",
-      "Continue regular school health checkups."
-    ];
-
-    if (childCondition.includes("anemia")) {
-      dietTips = [
-        "Add iron-rich foods: spinach, beetroot, jaggery, dates and legumes.",
-        "Pair iron foods with vitamin C sources like amla/orange/lemon.",
-        "Limit tea/coffee around meals as it can reduce iron absorption."
-      ];
-      careTips = [
-        "Follow hemoglobin test schedule advised by health worker.",
-        "Monitor weakness, pale skin or dizziness and report early.",
-        "Ask doctor about iron/folic supplements when prescribed."
-      ];
-    } else if (childCondition.includes("malnutrition")) {
-      dietTips = [
-        "Increase calorie-dense healthy foods: khichdi with ghee, eggs, paneer, banana.",
-        "Serve 5 smaller meals through the day instead of 2-3 large meals.",
-        "Add milk/curd and pulses daily for protein support."
-      ];
-      careTips = [
-        "Track weight every 2-4 weeks and note progress.",
-        "Consult pediatrician if weight gain is stagnant.",
-        "Ensure deworming and vaccination schedule is up to date."
-      ];
-    } else if (childCondition.includes("obesity")) {
-      dietTips = [
-        "Increase fiber foods: salads, fruits, whole grains, sprouts.",
-        "Reduce fried foods, bakery items and sugary drinks.",
-        "Prefer portion control with fixed meal timings."
-      ];
-      careTips = [
-        "Target at least 60 minutes physical activity daily.",
-        "Limit non-study screen time and late-night snacking.",
-        "Review BMI trend monthly with school/doctor."
-      ];
-    } else if (childCondition.includes("dental")) {
-      dietTips = [
-        "Reduce sticky sweets and sugar-heavy snacks.",
-        "Include calcium-rich foods like milk, paneer and sesame.",
-        "Rinse mouth with water after every meal."
-      ];
-      careTips = [
-        "Brush twice daily using fluoride toothpaste.",
-        "Schedule routine dental checkup every 6 months.",
-        "Seek care quickly for tooth pain or gum swelling."
-      ];
-    } else if (childCondition.includes("vision")) {
-      dietTips = [
-        "Add vitamin A foods: carrots, spinach, pumpkin and eggs.",
-        "Include omega-rich foods like nuts/seeds where possible.",
-        "Keep hydration and balanced meals consistent."
-      ];
-      careTips = [
-        "Ensure reading with proper lighting and posture.",
-        "Use 20-20-20 rule during screen usage.",
-        "Get periodic eye checks if headaches/squinting appear."
-      ];
-    }
-
-    if (!child?.vaccinated) {
-      careTips = [
-        "Complete pending vaccinations at the nearest health camp/PHC.",
-        ...careTips.slice(0, 2)
-      ];
-    }
-
-    if (child?.riskScore === "High") {
-      careTips = [
-        "Schedule doctor consultation within 24-48 hours for targeted treatment.",
-        ...careTips.slice(0, 2)
-      ];
-    }
-
-    return { dietTips, careTips };
-  };
-
-  const advice = getParentAdvice();
 
   const growthData = [
     { month: "Jan", height: 128, weight: 28, bmi: 17.1 },
@@ -948,7 +850,7 @@ const ParentDashboard = () => {
         <div style={{ flex: 1 }}>
           <p style={{ color: "#93c5fd", fontSize: "11px", letterSpacing: "0.08em" }}>STUDENT HEALTH CARD</p>
           <h2 style={{ color: "#fff", fontWeight: 800, fontSize: "20px" }}>{child?.name}</h2>
-          <p style={{ color: "#bfdbfe", fontSize: "13px" }}>{child?.class} | {child?.id} | Blood Group: {child?.bloodGroup}</p>
+          <p style={{ color: "#bfdbfe", fontSize: "13px" }}>{child?.class} • {child?.id} • Blood Group: {child?.bloodGroup}</p>
         </div>
         <RiskBadge risk={child?.riskScore || "Low"} />
       </div>
@@ -961,7 +863,7 @@ const ParentDashboard = () => {
       </div>
 
       {/* Growth Chart */}
-      <Card title="Growth Chart - Height & Weight (2025)" style={{ marginBottom: "16px" }}>
+      <Card title="Growth Chart — Height & Weight (2025)" style={{ marginBottom: "16px" }}>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={growthData}>
             <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
@@ -984,43 +886,10 @@ const ParentDashboard = () => {
             <p style={{ color: "#fecaca", fontSize: "12px" }}>Your child has been flagged for immediate medical attention. Health Worker Assigned: Dr. Mohan Verma</p>
           </div>
           <button onClick={() => callParent("108", "Emergency Helpline")} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "6px", padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
-            Call Doctor
+            📞 Call Doctor
           </button>
         </div>
       )}
-
-      {childReasons.length > 0 && (
-        <Card title="Why Child Was Flagged (AI Explanation)" style={{ marginBottom: "16px" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {childReasons.map((code) => (
-              <Badge key={code} color={code === "BASELINE_LOW_RISK" ? "green" : "orange"}>
-                {mapReasonCodeLabel(code)}
-              </Badge>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      <Card title="Diet & Care Advice (For Parents)">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "14px" }}>
-            <p style={{ color: "#16a34a", fontWeight: 700, fontSize: "13px", marginBottom: "8px" }}>Diet Suggestions</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {advice.dietTips.map((tip, idx) => (
-                <p key={idx} style={{ color: th.text, fontSize: "12px", lineHeight: 1.5 }}>• {tip}</p>
-              ))}
-            </div>
-          </div>
-          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "14px" }}>
-            <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "13px", marginBottom: "8px" }}>Care & Recovery Advice</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {advice.careTips.map((tip, idx) => (
-                <p key={idx} style={{ color: th.text, fontSize: "12px", lineHeight: 1.5 }}>• {tip}</p>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 };
@@ -1045,7 +914,7 @@ const SuperAdminDashboard = () => {
 
       {/* School Rankings */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-        <Card title="Top School Health Rankings - Varanasi District">
+        <Card title="🏆 School Health Rankings — Varanasi District">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {districtRanking.sort((a, b) => b.score - a.score).map((s, i) => (
               <div key={s.school} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
@@ -1201,10 +1070,10 @@ const StudentProfile = ({ student: s, onBack }) => {
     <div>
       {/* Back */}
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: "6px", background: "none", border: "none", color: th.accent, cursor: "pointer", fontWeight: 600, fontSize: "13px", marginBottom: "16px" }}>
-          Back to Students
+        ← Back to Students
       </button>
 
-      {/* Profile Header - CoWIN/Ayushman style */}
+      {/* Profile Header — CoWIN/Ayushman style */}
       <div style={{ background: "linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #2563eb 100%)", borderRadius: "16px", padding: "24px", marginBottom: "20px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: "20px", flexWrap: "wrap" }}>
           <div style={{ width: "80px", height: "80px", background: "rgba(255,255,255,0.2)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "32px", fontWeight: 800, color: "#fff", border: "3px solid rgba(255,255,255,0.4)", flexShrink: 0 }}>
@@ -1216,7 +1085,7 @@ const StudentProfile = ({ student: s, onBack }) => {
               <RiskBadge risk={s.riskScore} />
             </div>
             <p style={{ color: "#93c5fd", fontSize: "13px", marginBottom: "12px" }}>
-              {s.id} | {s.class}-{s.section} | {s.gender} | Age: {s.age} yrs
+              {s.id} • {s.class}-{s.section} • {s.gender} • Age: {s.age} yrs
             </p>
             <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
               {[
@@ -1237,11 +1106,11 @@ const StudentProfile = ({ student: s, onBack }) => {
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <div style={{ background: s.ayushmanCard ? "#16a34a" : "#6b7280", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
               <p style={{ color: "#fff", fontSize: "10px", fontWeight: 700 }}>AYUSHMAN BHARAT</p>
-              <p style={{ color: s.ayushmanCard ? "#bbf7d0" : "#d1d5db", fontSize: "10px" }}>{s.ayushmanCard ? "Done Enrolled" : "Not Enrolled"}</p>
+              <p style={{ color: s.ayushmanCard ? "#bbf7d0" : "#d1d5db", fontSize: "10px" }}>{s.ayushmanCard ? "✓ Enrolled" : "Not Enrolled"}</p>
             </div>
             <div style={{ background: s.midDayMeal ? "#2563eb" : "#6b7280", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
               <p style={{ color: "#fff", fontSize: "10px", fontWeight: 700 }}>MID DAY MEAL</p>
-              <p style={{ color: s.midDayMeal ? "#bfdbfe" : "#d1d5db", fontSize: "10px" }}>{s.midDayMeal ? "Done Active" : "Inactive"}</p>
+              <p style={{ color: s.midDayMeal ? "#bfdbfe" : "#d1d5db", fontSize: "10px" }}>{s.midDayMeal ? "✓ Active" : "Inactive"}</p>
             </div>
           </div>
         </div>
@@ -1283,7 +1152,7 @@ const StudentProfile = ({ student: s, onBack }) => {
                 </div>
                 <div style={{ paddingBottom: "8px" }}>
                   <p style={{ color: th.text, fontWeight: 600, fontSize: "12px" }}>{t.event}</p>
-                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{t.date} | {t.doctor}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{t.date} • {t.doctor}</p>
                 </div>
               </div>
             ))}
@@ -1298,7 +1167,7 @@ const StudentProfile = ({ student: s, onBack }) => {
             {["BCG", "OPV", "DPT", "Hepatitis B", "MMR", "Typhoid", "Vitamin A"].map((v, i) => (
               <div key={v} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "6px" }}>
                 <span style={{ color: th.text, fontSize: "13px" }}>{v}</span>
-                <Badge color={i < 5 ? "green" : "yellow"}>{i < 5 ? "Done" : "Pending"}</Badge>
+                <Badge color={i < 5 ? "green" : "yellow"}>{i < 5 ? "✓ Done" : "Pending"}</Badge>
               </div>
             ))}
           </div>
@@ -1314,7 +1183,7 @@ const StudentProfile = ({ student: s, onBack }) => {
               <div key={flag} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "6px" }}>
                 <span style={{ color: th.text, fontSize: "12px" }}>{flag}</span>
                 <span style={{ color: s.condition === flag ? "#ef4444" : "#22c55e", fontSize: "11px", fontWeight: 600 }}>
-                  {s.condition === flag ? "! Flagged" : "Done Clear"}
+                  {s.condition === flag ? "⚠ Flagged" : "✓ Clear"}
                 </span>
               </div>
             ))}
@@ -1326,7 +1195,7 @@ const StudentProfile = ({ student: s, onBack }) => {
       <Card title="Download Health Report">
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: "200px" }}>
-            <p style={{ color: th.text, fontSize: "13px", fontWeight: 600 }}>Student Health Report - {s.name}</p>
+            <p style={{ color: th.text, fontSize: "13px", fontWeight: 600 }}>Student Health Report — {s.name}</p>
             <p style={{ color: th.textMuted, fontSize: "12px" }}>Includes growth charts, vaccination records, risk assessment & scheme status</p>
           </div>
           <Button icon={Download} variant="primary" onClick={() => generateReport(`student-health-${s.id}.json`, { student: s, generatedAt: new Date().toISOString() })}>Download PDF Report</Button>
@@ -1474,10 +1343,10 @@ const SchemesPage = () => {
   const th = theme[darkMode ? "dark" : "light"];
 
   const schemes = [
-    { name: "Midday Meal Scheme (PM POSHAN)", icon: "[Meal]", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
-    { name: "Rashtriya Bal Swasthya Karyakram", icon: "[Health]", color: "#3b82f6", eligible: 98, covered: 72, missing: 26, missingDocs: ["Birth Certificate", "Health Card"] },
-    { name: "Ayushman Bharat (PM-JAY)", icon: "[Care]", color: "#7c3aed", eligible: 85, covered: 61, missing: 24, missingDocs: ["BPL Certificate", "Ration Card"] },
-    { name: "National Scholarship Portal", icon: "[Edu]", color: "#16a34a", eligible: 45, covered: 38, missing: 7, missingDocs: ["Bank Account", "Mark Sheet"] },
+    { name: "Midday Meal Scheme (PM POSHAN)", icon: "🍱", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
+    { name: "Rashtriya Bal Swasthya Karyakram", icon: "🏥", color: "#3b82f6", eligible: 98, covered: 72, missing: 26, missingDocs: ["Birth Certificate", "Health Card"] },
+    { name: "Ayushman Bharat (PM-JAY)", icon: "💊", color: "#7c3aed", eligible: 85, covered: 61, missing: 24, missingDocs: ["BPL Certificate", "Ration Card"] },
+    { name: "National Scholarship Portal", icon: "📚", color: "#16a34a", eligible: 45, covered: 38, missing: 7, missingDocs: ["Bank Account", "Mark Sheet"] },
   ];
 
   return (
@@ -1570,15 +1439,15 @@ const ClimatePage = () => {
       <div style={{ background: "linear-gradient(135deg, #14532d 0%, #166534 60%, #15803d 100%)", borderRadius: "16px", padding: "24px", marginBottom: "24px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <p style={{ color: "#86efac", fontSize: "11px", letterSpacing: "0.08em", marginBottom: "4px" }}>Green SCHOOL ENVIRONMENTAL SCORE - AI GENERATED</p>
+            <p style={{ color: "#86efac", fontSize: "11px", letterSpacing: "0.08em", marginBottom: "4px" }}>🌿 SCHOOL ENVIRONMENTAL SCORE — AI GENERATED</p>
             <p style={{ color: "#fff", fontSize: "48px", fontWeight: 800, lineHeight: 1 }}>{cd.envScore}<span style={{ fontSize: "20px", color: "#86efac" }}>/100</span></p>
-            <p style={{ color: "#86efac", fontSize: "13px", marginTop: "6px" }}>Good - Above District Average (62)</p>
+            <p style={{ color: "#86efac", fontSize: "13px", marginTop: "6px" }}>Good — Above District Average (62)</p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             {[
               { label: "Heatwave Risk", value: cd.heatwaveRisk, color: cd.heatwaveRisk === "High" ? "#ef4444" : "#f59e0b", icon: Thermometer },
               { label: "Water Quality", value: `${cd.waterQuality}/100`, color: "#22c55e", icon: Droplets },
-              { label: "Carbon Footprint", value: `${cd.carbonFootprint} tCO2`, color: "#f59e0b", icon: Wind },
+              { label: "Carbon Footprint", value: `${cd.carbonFootprint} tCO₂`, color: "#f59e0b", icon: Wind },
               { label: "Trees Planted", value: cd.treesPlanted, color: "#22c55e", icon: TreePine },
             ].map(item => (
               <div key={item.label} style={{ background: "rgba(255,255,255,0.12)", borderRadius: "8px", padding: "12px", minWidth: "120px" }}>
@@ -1638,36 +1507,25 @@ const ClimatePage = () => {
 // ============================================================
 
 const AlertsPage = () => {
-  const { darkMode, user, studentsData = students, callParent, sendSMS, generateReport } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS, generateReport } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
-  const isParentRole = user?.role === ROLES.PARENT;
-  const canBroadcast = user?.role && user.role !== ROLES.PARENT;
 
   return (
     <div>
-      <div style={{ marginBottom: "12px", background: darkMode ? "#1e293b" : "#ecfeff", border: `1px solid ${darkMode ? "#334155" : "#a5f3fc"}`, borderRadius: "10px", padding: "10px 12px" }}>
-        <p style={{ color: th.text, fontSize: "12px" }}>
-          Safety note: Alerts are decision support signals. Consult qualified medical professionals before treatment decisions.
-        </p>
-      </div>
       <div style={{ background: "linear-gradient(135deg, #dc2626, #7f1d1d)", borderRadius: "16px", padding: "20px 24px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "16px" }}>
         <AlertTriangle size={32} color="#fff" />
         <div>
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: "18px" }}>Emergency Health Alerts</p>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: "18px" }}>🚨 Emergency Health Alerts</p>
           <p style={{ color: "#fecaca", fontSize: "13px" }}>{highRisk.length} students require immediate attention</p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-          {canBroadcast && (
-          <>
-            <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-              Notify All Parents
-            </button>
-            <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-              Generate Report
-            </button>
-          </>
-        )}
+          <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
+            📞 Notify All Parents
+          </button>
+          <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
+            📋 Generate Report
+          </button>
         </div>
       </div>
 
@@ -1682,27 +1540,20 @@ const AlertsPage = () => {
                 <p style={{ color: th.text, fontWeight: 700, fontSize: "15px" }}>{s.name}</p>
                 <RiskBadge risk="High" />
               </div>
-              <p style={{ color: th.textMuted, fontSize: "12px" }}>{s.id} | {s.class} | {s.condition}</p>
-              <p style={{ color: th.textMuted, fontSize: "12px" }}>
-                {isParentRole ? "Doctor Helpline: 108" : `Parent: ${s.parentPhone}`}
-              </p>
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>{s.id} • {s.class} • {s.condition}</p>
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>Parent: {s.parentPhone}</p>
             </div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <div style={{ background: "#fee2e2", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
                 <p style={{ color: "#dc2626", fontSize: "9px", fontWeight: 700 }}>HEALTH WORKER</p>
                 <p style={{ color: "#dc2626", fontSize: "11px", fontWeight: 600 }}>Dr. Mohan Verma</p>
               </div>
-              {!isParentRole && (
-                <div style={{ background: "#fef9c3", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
-                  <p style={{ color: "#a16207", fontSize: "9px", fontWeight: 700 }}>SMS STATUS</p>
-                  <p style={{ color: "#a16207", fontSize: "11px", fontWeight: 600 }}>Done Sent</p>
-                </div>
-              )}
-              <button
-                onClick={() => (isParentRole ? callParent("108", "Doctor Helpline") : callParent(s.parentPhone, s.name))}
-                style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}
-              >
-                <Phone size={13} /> {isParentRole ? "Call Doctor" : "Call Parent"}
+              <div style={{ background: "#fef9c3", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
+                <p style={{ color: "#a16207", fontSize: "9px", fontWeight: 700 }}>SMS STATUS</p>
+                <p style={{ color: "#a16207", fontSize: "11px", fontWeight: 600 }}>✓ Sent</p>
+              </div>
+              <button onClick={() => callParent(s.parentPhone, s.name)} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
+                <Phone size={13} /> Call Parent
               </button>
             </div>
           </div>
@@ -1820,7 +1671,7 @@ const ReportsPage = () => {
             </div>
             <div style={{ flex: 1 }}>
               <p style={{ color: th.text, fontWeight: 600, fontSize: "13px" }}>{r.name}</p>
-              <p style={{ color: th.textMuted, fontSize: "11px" }}>{r.type} | {r.size} | {r.date}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>{r.type} • {r.size} • {r.date}</p>
             </div>
             <Badge color="green">{r.status}</Badge>
             <button onClick={() => generateReport(`${r.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, `${r.name}\nType: ${r.type}\nDate: ${r.date}\nStatus: ${r.status}`)} style={{ background: th.accentLight, color: th.accent, border: "none", borderRadius: "8px", padding: "7px 14px", cursor: "pointer", fontWeight: 600, fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
@@ -1829,54 +1680,6 @@ const ReportsPage = () => {
           </div>
         ))}
       </div>
-    </div>
-  );
-};
-
-const ImpactStrip = () => {
-  const { darkMode, studentsData = students, healthCampsData = healthCamps, aiReliability } = useApp();
-  const th = theme[darkMode ? "dark" : "light"];
-  const highRiskCount = studentsData.filter((s) => s.riskScore === "High").length;
-  const interventionCoverage = studentsData.length > 0 ? Math.round(((studentsData.length - highRiskCount) / studentsData.length) * 100) : 0;
-  const fallbackRate = Number(aiReliability?.fallbackRate ?? 0);
-  const aiReliabilityPct = Math.max(0, Math.min(100, Math.round((1 - fallbackRate) * 100)));
-
-  return (
-    <div
-      style={{
-        marginBottom: "16px",
-        background: "linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%)",
-        borderRadius: "14px",
-        padding: "14px 16px",
-        color: "#f0fdfa"
-      }}
-    >
-      <p style={{ fontSize: "11px", letterSpacing: "0.08em", opacity: 0.9, marginBottom: "8px" }}>HACKATHON IMPACT SNAPSHOT</p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px" }}>
-        <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: "10px", padding: "10px" }}>
-          <p style={{ fontSize: "10px", opacity: 0.9 }}>STUDENTS SCREENED</p>
-          <p style={{ fontSize: "22px", fontWeight: 800 }}>{studentsData.length}</p>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: "10px", padding: "10px" }}>
-          <p style={{ fontSize: "10px", opacity: 0.9 }}>HIGH-RISK ALERTS</p>
-          <p style={{ fontSize: "22px", fontWeight: 800 }}>{highRiskCount}</p>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: "10px", padding: "10px" }}>
-          <p style={{ fontSize: "10px", opacity: 0.9 }}>CAMPS CONDUCTED</p>
-          <p style={{ fontSize: "22px", fontWeight: 800 }}>{healthCampsData.length}</p>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: "10px", padding: "10px" }}>
-          <p style={{ fontSize: "10px", opacity: 0.9 }}>AI RELIABILITY</p>
-          <p style={{ fontSize: "22px", fontWeight: 800 }}>{aiReliabilityPct}%</p>
-        </div>
-        <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: "10px", padding: "10px" }}>
-          <p style={{ fontSize: "10px", opacity: 0.9 }}>INTERVENTION COVERAGE</p>
-          <p style={{ fontSize: "22px", fontWeight: 800 }}>{interventionCoverage}%</p>
-        </div>
-      </div>
-      <p style={{ marginTop: "10px", fontSize: "11px", opacity: 0.95 }}>
-        Decision support only. Final diagnosis/treatment must be confirmed by qualified medical professionals.
-      </p>
     </div>
   );
 };
@@ -1921,18 +1724,17 @@ const AppContent = () => {
           <div style={{ marginBottom: "20px" }}>
             <h1 style={{ color: th.text, fontSize: "20px", fontWeight: 800, textTransform: "capitalize" }}>
               {activePage === "dashboard"
-                ? `Welcome, ${user.name.split(" ")[0]}`
+                ? `Welcome, ${user.name.split(" ")[0]} 👋`
                 : activePage.replace(/-/g, " ")}
             </h1>
             {activePage === "dashboard" && (
               <p style={{ color: th.textMuted, fontSize: "13px" }}>
-                {user.role === ROLES.SCHOOL_ADMIN ? `${user.school} | UDISE: ${user.udise}` :
+                {user.role === ROLES.SCHOOL_ADMIN ? `${user.school} • UDISE: ${user.udise}` :
                   user.role === ROLES.SUPER_ADMIN ? `${user.district} District, ${user.state}` :
-                    user.role === ROLES.TEACHER ? `${user.class} | ${user.school}` : ""}
+                    user.role === ROLES.TEACHER ? `${user.class} • ${user.school}` : ""}
               </p>
             )}
           </div>
-          {activePage === "dashboard" && <ImpactStrip />}
           {pages[activePage] || <SchoolAdminDashboard />}
         </main>
       </div>
@@ -1954,26 +1756,12 @@ export default function SwasthyaSetu() {
   const [districtRanking, setDistrictRanking] = useState(districtData);
   const [districtClimateRisk, setDistrictClimateRisk] = useState(null);
   const [climateMetrics, setClimateMetrics] = useState(climateData);
-  const [aiReliability, setAiReliability] = useState({ total: 0, aiService: 0, fallback: 0, fallbackRate: 0 });
 
   const loadBackendData = useCallback(
     async (authToken, userProfile) => {
       try {
-        const healthMeta = await apiRequest("/health").catch(() => null);
-        if (healthMeta?.aiReliability) {
-          setAiReliability(healthMeta.aiReliability);
-        }
-
         const districtName = userProfile?.district || "Pune";
         let schoolId = userProfile?.schoolId || null;
-
-        if (userProfile?.role === ROLES.PARENT) {
-          const child = await apiRequest("/students/my-child", { token: authToken }).catch(() => null);
-          if (child) {
-            setStudentsData([mapBackendStudent(child, 0)]);
-          }
-          return;
-        }
 
         if (!schoolId && (userProfile?.backendRole === "SUPER_ADMIN" || userProfile?.backendRole === "DISTRICT_ADMIN")) {
           const topRisk = await apiRequest(`/district/${encodeURIComponent(districtName)}/top-risk-schools`, { token: authToken });
@@ -2078,7 +1866,6 @@ export default function SwasthyaSetu() {
         backendRole: me.role,
         roleLabel: BACKEND_ROLE_LABEL[me.role] || me.role,
         schoolId: me.schoolId || null,
-        childStudentId: me.childStudentId || null,
         school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
         udise: "N/A",
         district: "Pune",
@@ -2172,7 +1959,6 @@ export default function SwasthyaSetu() {
           backendRole: me.role,
           roleLabel: BACKEND_ROLE_LABEL[me.role] || me.role,
           schoolId: me.schoolId || null,
-          childStudentId: me.childStudentId || null,
           school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
           udise: "N/A",
           district: "Pune",
@@ -2203,7 +1989,6 @@ export default function SwasthyaSetu() {
         districtRanking,
         districtClimateRisk,
         climateMetrics,
-        aiReliability,
         createHealthCamp,
         callParent,
         sendSMS,
@@ -2222,5 +2007,3 @@ export default function SwasthyaSetu() {
     </AppContext.Provider>
   );
 }
-
-
