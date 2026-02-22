@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  DISTRICT_ADMIN
+  SCHOOL_ADMIN
+  TEACHER
+  PARENT
+}
+
+enum SchoolType {
+  GOVT
+  PRIVATE
+}
+
+model User {
+  id           String       @id @default(uuid())
+  name         String
+  email        String       @unique
+  passwordHash String       @map("password_hash")
+  role         UserRole
+  schoolId     String?      @map("school_id")
+  childStudentId String?    @map("child_student_id")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  school       School?      @relation(fields: [schoolId], references: [id])
+  childStudent Student?     @relation("ParentChild", fields: [childStudentId], references: [id])
+  refreshTokens RefreshToken[]
+  camps        HealthCamp[] @relation("CampCreator")
+  audits       AuditLog[]
+
+  @@index([childStudentId])
+  @@map("users")
+}
+
+model School {
+  id         String      @id @default(uuid())
+  name       String
+  udiseCode  String      @unique @map("udise_code")
+  type       SchoolType
+  district   String
+  infraScore Float       @map("infra_score")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  users      User[]
+  students   Student[]
+  camps      HealthCamp[]
+
+  @@index([district])
+  @@map("schools")
+}
+
+model Student {
+  id                String            @id @default(uuid())
+  schoolId          String            @map("school_id")
+  className         String            @map("class")
+  gender            String
+  heightCm          Float             @map("height_cm")
+  weightKg          Float             @map("weight_kg")
+  bmi               Float
+  vaccinationStatus String            @map("vaccination_status")
+  attendanceRatio   Float             @default(1) @map("attendance_ratio")
+  riskScore         Float             @default(0) @map("risk_score")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  school            School            @relation(fields: [schoolId], references: [id])
+  schemeEligibility SchemeEligibility?
+  parentUsers       User[]            @relation("ParentChild")
+
+  @@index([schoolId])
+  @@index([riskScore])
+  @@map("students")
+}
+
+model ClimateData {
+  id            String   @id @default(uuid())
+  district      String
+  date          DateTime
+  temperature   Float
+  aqi           Int
+  heatAlertFlag Boolean  @default(false) @map("heat_alert_flag")
+
+  @@index([district])
+  @@index([date])
+  @@map("climate_data")
+}
+
+model SchemeEligibility {
+  id               String   @id @default(uuid())
+  studentId        String   @unique @map("student_id")
+  ayushmanEligible Boolean  @default(false) @map("ayushman_eligible")
+  rbsrFlag         Boolean  @default(false) @map("rbsr_flag")
+  middayMealStatus String   @default("UNKNOWN") @map("midday_meal_status")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  student          Student  @relation(fields: [studentId], references: [id])
+
+  @@map("scheme_eligibility")
+}
+
+model HealthCamp {
+  id                String   @id @default(uuid())
+  schoolId          String   @map("school_id")
+  campType          String   @map("camp_type")
+  date              DateTime
+  participantsCount Int      @map("participants_count")
+  createdBy         String   @map("created_by")
+  school            School   @relation(fields: [schoolId], references: [id])
+  creator           User     @relation("CampCreator", fields: [createdBy], references: [id])
+
+  @@index([schoolId])
+  @@map("health_camps")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @map("token_hash")
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  resource  String
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("audit_logs")
+}

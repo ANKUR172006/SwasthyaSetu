@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "SwasthyaSetu Backend API",
+    "description": "Postman collection for SwasthyaSetu - Green Bharat School Intelligence Platform backend APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "email", "value": "superadmin@swasthyasetu.in" },
+    { "key": "password", "value": "Admin@1234" },
+    { "key": "accessToken", "value": "" },
+    { "key": "schoolId", "value": "" },
+    { "key": "studentId", "value": "" },
+    { "key": "districtName", "value": "Pune" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pilot Teacher\",\n  \"email\": \"pilot.teacher@swasthyasetu.in\",\n  \"password\": \"Admin@1234\",\n  \"role\": \"TEACHER\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schools",
+      "item": [
+        {
+          "name": "School Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/schools/{{schoolId}}/summary", "host": ["{{baseUrl}}"], "path": ["schools", "{{schoolId}}", "summary"] }
+          }
+        },
+        {
+          "name": "School Health Risk",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/schools/{{schoolId}}/health-risk", "host": ["{{baseUrl}}"], "path": ["schools", "{{schoolId}}", "health-risk"] }
+          }
+        },
+        {
+          "name": "School Scheme Coverage",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/schools/{{schoolId}}/scheme-coverage", "host": ["{{baseUrl}}"], "path": ["schools", "{{schoolId}}", "scheme-coverage"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Students",
+      "item": [
+        {
+          "name": "Create Student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) {",
+                  "  pm.collectionVariables.set('studentId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/students", "host": ["{{baseUrl}}"], "path": ["students"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schoolId\": \"{{schoolId}}\",\n  \"class\": \"8A\",\n  \"gender\": \"F\",\n  \"heightCm\": 146,\n  \"weightKg\": 41,\n  \"vaccinationStatus\": \"PARTIAL\",\n  \"attendanceRatio\": 0.91\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Student",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/students/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["students", "{{studentId}}"] }
+          }
+        },
+        {
+          "name": "Update Student",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/students/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["students", "{{studentId}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attendanceRatio\": 0.88,\n  \"vaccinationStatus\": \"DELAYED\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Student",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/students/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["students", "{{studentId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "District",
+      "item": [
+        {
+          "name": "District Comparison",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/district/{{districtName}}/comparison", "host": ["{{baseUrl}}"], "path": ["district", "{{districtName}}", "comparison"] }
+          }
+        },
+        {
+          "name": "District Climate Risk",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/district/{{districtName}}/climate-risk", "host": ["{{baseUrl}}"], "path": ["district", "{{districtName}}", "climate-risk"] }
+          }
+        },
+        {
+          "name": "District Top Risk Schools",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/district/{{districtName}}/top-risk-schools", "host": ["{{baseUrl}}"], "path": ["district", "{{districtName}}", "top-risk-schools"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Camp",
+      "item": [
+        {
+          "name": "Create Health Camp",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/health-camp", "host": ["{{baseUrl}}"], "path": ["health-camp"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schoolId\": \"{{schoolId}}\",\n  \"campType\": \"VISION_DENTAL\",\n  \"date\": \"2026-02-22T09:00:00.000Z\",\n  \"participantsCount\": 120\n}"
+            }
+          }
+        },
+        {
+          "name": "List Health Camps by School",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/health-camp/{{schoolId}}", "host": ["{{baseUrl}}"], "path": ["health-camp", "{{schoolId}}"] }
+          }
+        }
+      ]
+    }
+  ]
+}
