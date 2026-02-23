@@ -233,6 +233,11 @@ const riskLabelFromScore = (score) => {
   return "Low";
 };
 
+const toDisplaySchoolLabel = (name) => {
+  const normalized = String(name || "Unknown School").trim();
+  return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
+};
+
 const mockUsers = [
   { id: 1, name: "Rajesh Kumar Sharma", email: "admin@district.gov.in", role: ROLES.SUPER_ADMIN, district: "Panipat", state: "Haryana" },
   { id: 2, name: "Priya Agarwal", email: "school@gpschool.edu.in", role: ROLES.SCHOOL_ADMIN, school: "Govt. Primary School No. 47", udise: "09231400101" },
@@ -1023,14 +1028,31 @@ const ParentDashboard = () => {
 const SuperAdminDashboard = () => {
   const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
-  const avgDistrictScore = districtRanking.length
-    ? Math.round(districtRanking.reduce((acc, item) => acc + item.score, 0) / districtRanking.length)
+  const normalizedRanking = (Array.isArray(districtRanking) ? districtRanking : [])
+    .map((item, idx) => {
+      const numericScore = Number(item?.score);
+      if (!Number.isFinite(numericScore)) return null;
+      return {
+        school: String(item?.school || `School ${idx + 1}`),
+        score: Math.max(0, Math.min(100, Math.round(numericScore))),
+        rank: Number(item?.rank || idx + 1)
+      };
+    })
+    .filter(Boolean);
+  const rankingData = normalizedRanking.length > 0 ? normalizedRanking : districtData.map((item) => ({
+    school: String(item.school),
+    score: Number(item.score),
+    rank: Number(item.rank)
+  }));
+  const sortedRanking = [...rankingData].sort((a, b) => b.score - a.score);
+  const avgDistrictScore = rankingData.length
+    ? Math.round(rankingData.reduce((acc, item) => acc + item.score, 0) / rankingData.length)
     : 76;
 
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-        <StatCard icon={Building2} label="Total Schools" value={districtRanking.length || 342} change={1.2} color="#7c3aed" />
+        <StatCard icon={Building2} label="Total Schools" value={rankingData.length || 342} change={1.2} color="#7c3aed" />
         <StatCard icon={Users} label="Total Students" value={studentsData.length || "41,280"} change={3.1} color="#1e40af" />
         <StatCard icon={AlertTriangle} label="District Alerts" value={districtClimateRisk?.heatAlertDays ?? 47} bg="#dc2626" color="#dc2626" />
         <StatCard icon={Shield} label="Scheme Coverage" value="79%" change={2.8} color="#16a34a" />
@@ -1039,10 +1061,10 @@ const SuperAdminDashboard = () => {
       </div>
 
       {/* School Rankings */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         <Card title="🏆 School Health Rankings — Panipat District">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {districtRanking.sort((a, b) => b.score - a.score).map((s, i) => (
+            {sortedRanking.slice(0, 12).map((s, i) => (
               <div key={s.school} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
                 <div style={{ width: "28px", height: "28px", background: i < 3 ? ["#f59e0b", "#9ca3af", "#cd7c4f"][i] : "#e2e8f0", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 700, color: i < 3 ? "#fff" : th.textMuted }}>
                   {i + 1}
@@ -1063,13 +1085,13 @@ const SuperAdminDashboard = () => {
 
         <Card title="District Comparison">
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={districtRanking}>
+            <BarChart data={sortedRanking.slice(0, 12).map((entry) => ({ ...entry, shortSchool: toDisplaySchoolLabel(entry.school) }))} margin={{ top: 8, right: 12, left: 0, bottom: 50 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
-              <XAxis dataKey="school" tick={{ fontSize: 9, fill: th.textMuted }} />
-              <YAxis domain={[60, 100]} tick={{ fontSize: 11, fill: th.textMuted }} />
+              <XAxis dataKey="shortSchool" angle={-25} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fill: th.textMuted }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: th.textMuted }} />
               <Tooltip contentStyle={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "8px" }} />
               <Bar dataKey="score" name="Health Score" radius={[4, 4, 0, 0]}>
-                {districtRanking.map((entry, i) => (
+                {sortedRanking.slice(0, 12).map((entry, i) => (
                   <Cell key={i} fill={entry.score >= 85 ? "#22c55e" : entry.score >= 75 ? "#3b82f6" : "#f59e0b"} />
                 ))}
               </Bar>
@@ -1825,7 +1847,7 @@ const AppContent = () => {
     [ROLES.SUPER_ADMIN]: <SuperAdminDashboard />,
     [ROLES.SCHOOL_ADMIN]: <SchoolAdminDashboard />,
     [ROLES.TEACHER]: <TeacherDashboard />,
-    [ROLES.HEALTH_WORKER]: <SchoolAdminDashboard />,
+    [ROLES.HEALTH_WORKER]: <SuperAdminDashboard />,
     [ROLES.PARENT]: <ParentDashboard />,
   };
 
