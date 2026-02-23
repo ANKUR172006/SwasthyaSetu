@@ -44,9 +44,13 @@ const ROLES = {
 
 const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").trim();
 const hasPlaceholderApiUrl = /replace_with_backend_url/i.test(rawApiBaseUrl);
+const PROD_BACKEND_CANDIDATES = [
+  "https://swasthyasetu-backend-dyip.onrender.com",
+  "https://swasthyasetu-backend.onrender.com",
+];
 const API_BASE_URL = rawApiBaseUrl && !hasPlaceholderApiUrl
-  ? rawApiBaseUrl
-  : (import.meta.env.DEV ? "http://localhost:8080" : "https://swasthyasetu-backend.onrender.com");
+  ? rawApiBaseUrl.replace(/\/+$/, "")
+  : (import.meta.env.DEV ? "http://localhost:8080" : PROD_BACKEND_CANDIDATES[0]);
 
 const ROLE_LOGIN_MAP = {
   [ROLES.SUPER_ADMIN]: { email: "superadmin@swasthyasetu.in", password: "Admin@1234" },
@@ -72,33 +76,72 @@ const BACKEND_ROLE_LABEL = {
   PARENT: "Parent",
 };
 
-const apiRequest = async (path, { method = "GET", body, token } = {}) => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
-  });
+const API_TIMEOUT_MS = 15000;
 
-  if (!response.ok) {
-    let message = "Request failed";
-    try {
-      const data = await response.json();
-      message = data.error || message;
-    } catch {
-      // ignore parse errors
+const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      let message = "Request failed";
+      try {
+        const data = await response.json();
+        message = data.error || data.detail || message;
+      } catch {
+        // ignore parse errors
+      }
+      throw new Error(message);
     }
-    throw new Error(message);
+
+    if (response.status === 204) {
+      return null;
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const apiRequest = async (path, options = {}) => {
+  const candidates = [API_BASE_URL];
+  if (!import.meta.env.DEV && !rawApiBaseUrl) {
+    for (const url of PROD_BACKEND_CANDIDATES) {
+      if (!candidates.includes(url)) {
+        candidates.push(url);
+      }
+    }
   }
 
-  if (response.status === 204) {
-    return null;
+  let lastError = null;
+  for (const baseUrl of candidates) {
+    try {
+      return await requestJson(baseUrl, path, options);
+    } catch (error) {
+      lastError = error;
+      const isAbort = error?.name === "AbortError";
+      const isNetwork = error instanceof TypeError;
+      if (!isAbort && !isNetwork) {
+        throw error;
+      }
+    }
   }
 
-  return response.json();
+  if (lastError?.name === "AbortError") {
+    throw new Error("Request timed out. Please try again.");
+  }
+  throw new Error("Unable to reach backend API. Please check deployment and CORS settings.");
 };
 
 const riskLabelFromScore = (score) => {
