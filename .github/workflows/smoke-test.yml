@@ -8,9 +8,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoke:
+  precheck:
     runs-on: ubuntu-latest
-    if: ${{ secrets.SMOKE_BASE_URL != '' }}
+    outputs:
+      can_run_smoke: ${{ steps.check.outputs.can_run_smoke }}
+    steps:
+      - name: Check smoke test secrets
+        id: check
+        run: |
+          if [ -n "${{ secrets.SMOKE_BASE_URL }}" ]; then
+            echo "can_run_smoke=true" >> "$GITHUB_OUTPUT"
+            echo "Smoke test secrets detected. Smoke job will run."
+          else
+            echo "can_run_smoke=false" >> "$GITHUB_OUTPUT"
+            echo "Smoke test skipped: missing SMOKE_BASE_URL secret."
+          fi
+
+  smoke:
+    needs: precheck
+    runs-on: ubuntu-latest
+    if: ${{ needs.precheck.outputs.can_run_smoke == 'true' }}
     defaults:
       run:
         working-directory: backend
@@ -25,3 +42,13 @@ jobs:
           SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+
+  smoke-skip-note:
+    needs: precheck
+    runs-on: ubuntu-latest
+    if: ${{ needs.precheck.outputs.can_run_smoke != 'true' }}
+    steps:
+      - name: Report skipped smoke test
+        run: |
+          echo "Smoke test was not executed because SMOKE_BASE_URL secret is missing."
+          echo "Add SMOKE_BASE_URL, SMOKE_EMAIL, and SMOKE_PASSWORD in repo Actions secrets."
