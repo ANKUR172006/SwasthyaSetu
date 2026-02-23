@@ -76,6 +76,22 @@ const BACKEND_ROLE_LABEL = {
   PARENT: "Parent",
 };
 
+const UI_ROLE_TO_BACKEND_ROLE = {
+  [ROLES.SUPER_ADMIN]: "SUPER_ADMIN",
+  [ROLES.SCHOOL_ADMIN]: "SCHOOL_ADMIN",
+  [ROLES.TEACHER]: "TEACHER",
+  [ROLES.HEALTH_WORKER]: "DISTRICT_ADMIN",
+  [ROLES.PARENT]: "PARENT",
+};
+
+const UI_ROLE_TO_DEFAULT_NAME = {
+  [ROLES.SUPER_ADMIN]: "Platform Super Admin",
+  [ROLES.SCHOOL_ADMIN]: "School Admin",
+  [ROLES.TEACHER]: "Teacher",
+  [ROLES.HEALTH_WORKER]: "District Admin",
+  [ROLES.PARENT]: "Parent User",
+};
+
 const API_TIMEOUT_MS = 15000;
 
 const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
@@ -1888,10 +1904,43 @@ export default function SwasthyaSetu() {
 
   const login = useCallback(
     async (selectedRole, email, password) => {
-      const auth = await apiRequest("/auth/login", {
-        method: "POST",
-        body: { email, password },
-      });
+      let auth;
+      try {
+        auth = await apiRequest("/auth/login", {
+          method: "POST",
+          body: { email, password },
+        });
+      } catch (error) {
+        const message = String(error?.message || "");
+        const invalidCredentials = /invalid credentials/i.test(message);
+        if (!invalidCredentials) {
+          throw error;
+        }
+
+        const backendRole = UI_ROLE_TO_BACKEND_ROLE[selectedRole] || "SCHOOL_ADMIN";
+        const name = UI_ROLE_TO_DEFAULT_NAME[selectedRole] || "SwasthyaSetu User";
+        try {
+          auth = await apiRequest("/auth/register", {
+            method: "POST",
+            body: {
+              name,
+              email,
+              password,
+              role: backendRole,
+            },
+          });
+        } catch (registerError) {
+          const registerMessage = String(registerError?.message || "");
+          const alreadyRegistered = /already registered|already exists|409/i.test(registerMessage);
+          if (!alreadyRegistered) {
+            throw registerError;
+          }
+          auth = await apiRequest("/auth/login", {
+            method: "POST",
+            body: { email, password },
+          });
+        }
+      }
       const accessToken = auth?.accessToken || "";
       if (!accessToken) {
         throw new Error("Access token missing");

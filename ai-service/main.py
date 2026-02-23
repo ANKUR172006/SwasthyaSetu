@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field
 app = FastAPI(title="SwasthyaSetu AI Risk Engine", version="1.0.0")
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"name": "SwasthyaSetu AI Risk Engine", "status": "ok"}
+
+
 class RiskRequest(BaseModel):
     bmi: float = Field(gt=0)
     vaccination_status: str
