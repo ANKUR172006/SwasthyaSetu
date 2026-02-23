@@ -234,6 +234,8 @@ const riskLabelFromScore = (score) => {
   return "Low";
 };
 
+const hasItems = (value) => Array.isArray(value) && value.length > 0;
+
 const toDisplaySchoolLabel = (name) => {
   const normalized = String(name || "Unknown School").trim();
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
@@ -319,16 +321,20 @@ const mapBackendStudent = (student, idx = 0) => {
   };
 };
 
-const mapBackendCamp = (camp) => ({
-  id: camp.id,
-  name: `${camp.campType} Camp`,
-  type: camp.campType,
-  date: new Date(camp.date).toISOString().slice(0, 10),
-  status: new Date(camp.date) > new Date() ? "Upcoming" : "Completed",
-  students: camp.participantsCount,
-  venue: "School Premises",
-  doctor: "District Medical Team",
-});
+const mapBackendCamp = (camp) => {
+  const parsedDate = camp?.date ? new Date(camp.date) : null;
+  const hasValidDate = parsedDate instanceof Date && !Number.isNaN(parsedDate.valueOf());
+  return {
+    id: camp.id,
+    name: `${camp.campType} Camp`,
+    type: camp.campType,
+    date: hasValidDate ? parsedDate.toISOString().slice(0, 10) : "TBD",
+    status: hasValidDate && parsedDate > new Date() ? "Upcoming" : "Completed",
+    students: camp.participantsCount,
+    venue: "School Premises",
+    doctor: "District Medical Team",
+  };
+};
 
 const attendanceData = [
   { month: "Apr", attendance: 88, healthIncidents: 12 },
@@ -1430,12 +1436,17 @@ const HealthCampsPage = () => {
 
   const handleCreateCamp = async () => {
     if (!form.date || !createHealthCamp) return;
+    const participantsCount = Number.parseInt(String(form.participantsCount || "0"), 10);
+    if (Number.isNaN(participantsCount) || participantsCount < 0) {
+      alert("Please enter a valid participant count.");
+      return;
+    }
     setSaving(true);
     try {
       await createHealthCamp({
         campType: form.campType,
         date: new Date(form.date).toISOString(),
-        participantsCount: Number(form.participantsCount || 0),
+        participantsCount,
       });
       setShowCreate(false);
       setForm({ campType: "General Checkup", participantsCount: "100", date: "" });
@@ -1990,7 +2001,7 @@ export default function SwasthyaSetu() {
 
         if (!schoolId && canViewDistrictAnalytics) {
           const topRisk = await apiRequest(`/district/${encodeURIComponent(districtName)}/top-risk-schools`, { token: authToken });
-          if (Array.isArray(topRisk) && topRisk.length > 0) {
+          if (hasItems(topRisk)) {
             schoolId = topRisk[0].schoolId;
             setDistrictRanking(
               topRisk.map((item, index) => ({
@@ -2010,11 +2021,11 @@ export default function SwasthyaSetu() {
             apiRequest(`/schools/${schoolId}/summary`, { token: authToken }).catch(() => null),
           ]);
 
-          if (studentRes?.data) {
+          if (hasItems(studentRes?.data)) {
             setStudentsData(studentRes.data.map((s, idx) => mapBackendStudent(s, idx)));
           }
 
-          if (Array.isArray(campRes)) {
+          if (hasItems(campRes)) {
             setHealthCampsData(campRes.map(mapBackendCamp));
           }
 
@@ -2054,7 +2065,7 @@ export default function SwasthyaSetu() {
               : Promise.resolve(null),
           ]);
 
-          if (Array.isArray(districtComparison) && districtComparison.length > 0) {
+          if (hasItems(districtComparison)) {
             setDistrictRanking(
               districtComparison.map((entry, idx) => ({
                 school: entry.schoolName || `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
