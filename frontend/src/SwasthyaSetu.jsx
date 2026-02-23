@@ -1879,9 +1879,12 @@ export default function SwasthyaSetu() {
           if (Array.isArray(districtComparison) && districtComparison.length > 0) {
             setDistrictRanking(
               districtComparison.map((entry, idx) => ({
-                school: `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
-                score: Math.max(45, Math.min(98, Math.round((1 - Number(entry.avgRisk || 0)) * 100))),
-                rank: idx + 1,
+                school: entry.schoolName || `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
+                score: Math.max(
+                  45,
+                  Math.min(98, Math.round(Number(entry.compositeScore ?? (1 - Number(entry.avgRisk || 0)) * 100)))
+                ),
+                rank: Number(entry.rank || idx + 1),
               }))
             );
           }

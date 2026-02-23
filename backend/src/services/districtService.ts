@@ -3,6 +3,12 @@ import { redis } from "../config/redis";
 
 const cacheTtl = 420;
 const ALL_INDIA_TOKENS = new Set(["all-india", "all_india", "india", "*"]);
+const RANKING_WEIGHTS = {
+  health: 0.4,
+  attendance: 0.3,
+  scheme: 0.2,
+  infra: 0.1
+};
 
 const fromCache = async <T>(key: string): Promise<T | null> => {
   const cached = await redis.get(key);
@@ -21,35 +27,165 @@ const districtFilter = (district: string) => {
   };
 };
 
+const schoolWhereForDistrict = (district: string, isAllIndia: boolean) =>
+  isAllIndia
+    ? {}
+    : {
+        district: {
+          contains: district.trim(),
+          mode: "insensitive" as const
+        }
+      };
+
+const boundedScore = (value: number): number => Math.max(0, Math.min(100, Number(value.toFixed(2))));
+
+type DistrictComparisonItem = {
+  schoolId: string;
+  schoolName: string;
+  district: string;
+  type: string;
+  students: number;
+  avgRisk: number;
+  avgBmi: number;
+  avgAttendance: number;
+  schemeCoverage: {
+    ayushman: number;
+    rbsk: number;
+  };
+  scoreBreakdown: {
+    health: number;
+    attendance: number;
+    scheme: number;
+    infra: number;
+  };
+  compositeScore: number;
+  rank: number;
+};
+
+type DistrictTopRiskItem = {
+  schoolId: string;
+  schoolName: string;
+  avgRisk: number;
+  rank: number;
+  compositeScore: number;
+};
+
 export const districtComparison = async (district: string) => {
   const normalized = districtFilter(district);
   const key = `district:comparison:${normalized.normalized}`;
-  const cached = await fromCache(key);
+  const cached = await fromCache<DistrictComparisonItem[]>(key);
   if (cached) {
     return cached;
   }
 
   const schools = await prisma.school.findMany({
-    where: normalized.isAllIndia ? {} : { district }
+    where: schoolWhereForDistrict(district, normalized.isAllIndia),
+    select: { id: true, name: true, district: true, type: true, infraScore: true }
   });
   const schoolIds = schools.map((s) => s.id);
   if (schoolIds.length === 0) {
     return [];
   }
 
-  const metrics = await prisma.student.groupBy({
-    by: ["schoolId"],
+  const students = await prisma.student.findMany({
     where: { schoolId: { in: schoolIds } },
-    _avg: { riskScore: true, bmi: true },
-    _count: { _all: true }
+    select: {
+      schoolId: true,
+      bmi: true,
+      riskScore: true,
+      attendanceRatio: true,
+      schemeEligibility: {
+        select: {
+          ayushmanEligible: true,
+          rbsrFlag: true
+        }
+      }
+    }
   });
 
-  const response = metrics.map((m) => ({
-    schoolId: m.schoolId,
-    avgRisk: Number((m._avg.riskScore ?? 0).toFixed(2)),
-    avgBmi: Number((m._avg.bmi ?? 0).toFixed(2)),
-    students: m._count._all
-  }));
+  const schoolMap = new Map(schools.map((school) => [school.id, school]));
+  const aggregateMap = new Map<
+    string,
+    {
+      riskTotal: number;
+      bmiTotal: number;
+      attendanceTotal: number;
+      ayushmanEligible: number;
+      rbskCovered: number;
+      students: number;
+    }
+  >();
+
+  for (const student of students) {
+    const current = aggregateMap.get(student.schoolId) ?? {
+      riskTotal: 0,
+      bmiTotal: 0,
+      attendanceTotal: 0,
+      ayushmanEligible: 0,
+      rbskCovered: 0,
+      students: 0
+    };
+    current.riskTotal += student.riskScore;
+    current.bmiTotal += student.bmi;
+    current.attendanceTotal += student.attendanceRatio;
+    current.students += 1;
+    if (student.schemeEligibility?.ayushmanEligible) {
+      current.ayushmanEligible += 1;
+    }
+    if (student.schemeEligibility && !student.schemeEligibility.rbsrFlag) {
+      current.rbskCovered += 1;
+    }
+    aggregateMap.set(student.schoolId, current);
+  }
+
+  const response = schools
+    .map((school) => {
+      const aggregate = aggregateMap.get(school.id);
+      const studentsCount = aggregate?.students ?? 0;
+      const avgRisk = studentsCount > 0 ? aggregate!.riskTotal / studentsCount : 0;
+      const avgBmi = studentsCount > 0 ? aggregate!.bmiTotal / studentsCount : 0;
+      const avgAttendance = studentsCount > 0 ? aggregate!.attendanceTotal / studentsCount : 0;
+      const ayushmanCoverageRatio = studentsCount > 0 ? aggregate!.ayushmanEligible / studentsCount : 0;
+      const rbskCoverageRatio = studentsCount > 0 ? aggregate!.rbskCovered / studentsCount : 0;
+
+      const healthScore = boundedScore((1 - avgRisk) * 100);
+      const attendanceScore = boundedScore(avgAttendance * 100);
+      const schemeScore = boundedScore(((ayushmanCoverageRatio + rbskCoverageRatio) / 2) * 100);
+      const infraScore = boundedScore(school.infraScore);
+      const compositeScore = boundedScore(
+        healthScore * RANKING_WEIGHTS.health +
+          attendanceScore * RANKING_WEIGHTS.attendance +
+          schemeScore * RANKING_WEIGHTS.scheme +
+          infraScore * RANKING_WEIGHTS.infra
+      );
+
+      return {
+        schoolId: school.id,
+        schoolName: school.name,
+        district: school.district,
+        type: school.type,
+        students: studentsCount,
+        avgRisk: Number(avgRisk.toFixed(2)),
+        avgBmi: Number(avgBmi.toFixed(2)),
+        avgAttendance: Number(avgAttendance.toFixed(2)),
+        schemeCoverage: {
+          ayushman: Number(ayushmanCoverageRatio.toFixed(2)),
+          rbsk: Number(rbskCoverageRatio.toFixed(2))
+        },
+        scoreBreakdown: {
+          health: healthScore,
+          attendance: attendanceScore,
+          scheme: schemeScore,
+          infra: infraScore
+        },
+        compositeScore
+      };
+    })
+    .sort((a, b) => b.compositeScore - a.compositeScore)
+    .map((entry, index) => ({
+      ...entry,
+      rank: index + 1
+    }));
 
   await toCache(key, response);
   return response;
@@ -69,7 +205,12 @@ export const districtClimateRisk = async (district: string) => {
         orderBy: { date: "desc" }
       })
     : await prisma.climateData.findMany({
-        where: { district },
+        where: {
+          district: {
+            contains: district.trim(),
+            mode: "insensitive"
+          }
+        },
         orderBy: { date: "desc" },
         take: 7
       });
@@ -95,31 +236,19 @@ export const districtClimateRisk = async (district: string) => {
 export const districtTopRiskSchools = async (district: string) => {
   const normalized = districtFilter(district);
   const key = `district:top-risk:${normalized.normalized}`;
-  const cached = await fromCache(key);
+  const cached = await fromCache<DistrictTopRiskItem[]>(key);
   if (cached) {
     return cached;
   }
 
-  const schools = await prisma.school.findMany({
-    where: normalized.isAllIndia ? {} : { district },
-    select: { id: true, name: true }
-  });
-  if (schools.length === 0) {
-    return [];
-  }
-  const schoolMap = new Map(schools.map((school) => [school.id, school.name]));
-
-  const aggregated = await prisma.student.groupBy({
-    by: ["schoolId"],
-    where: { schoolId: { in: schools.map((school) => school.id) } },
-    _avg: { riskScore: true }
-  });
-
-  const response = aggregated
+  const comparison = await districtComparison(district);
+  const response: DistrictTopRiskItem[] = comparison
     .map((entry) => ({
       schoolId: entry.schoolId,
-      schoolName: schoolMap.get(entry.schoolId) ?? "Unknown School",
-      avgRisk: Number((entry._avg.riskScore ?? 0).toFixed(2))
+      schoolName: entry.schoolName,
+      avgRisk: entry.avgRisk,
+      rank: entry.rank,
+      compositeScore: entry.compositeScore
     }))
     .sort((a, b) => b.avgRisk - a.avgRisk)
     .slice(0, 10);
