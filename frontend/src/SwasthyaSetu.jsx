@@ -169,7 +169,7 @@ const riskLabelFromScore = (score) => {
 };
 
 const mockUsers = [
-  { id: 1, name: "Rajesh Kumar Sharma", email: "admin@district.gov.in", role: ROLES.SUPER_ADMIN, district: "Varanasi", state: "Uttar Pradesh" },
+  { id: 1, name: "Rajesh Kumar Sharma", email: "admin@district.gov.in", role: ROLES.SUPER_ADMIN, district: "Panipat", state: "Haryana" },
   { id: 2, name: "Priya Agarwal", email: "school@gpschool.edu.in", role: ROLES.SCHOOL_ADMIN, school: "Govt. Primary School No. 47", udise: "09231400101" },
   { id: 3, name: "Sunita Devi", email: "teacher@gpschool.edu.in", role: ROLES.TEACHER, class: "Class 6-A", school: "Govt. Primary School No. 47" },
   { id: 4, name: "Dr. Mohan Verma", email: "health@district.gov.in", role: ROLES.HEALTH_WORKER, assigned: "Zone 3" },
@@ -286,12 +286,12 @@ const schemeData = [
 ];
 
 const districtData = [
-  { school: "GPS No. 47", score: 84, rank: 1 },
-  { school: "GPS No. 12", score: 79, rank: 2 },
-  { school: "GPS No. 89", score: 76, rank: 3 },
-  { school: "JNV Varanasi", score: 91, rank: 4 },
-  { school: "KV No. 2", score: 88, rank: 5 },
-  { school: "GPS No. 33", score: 71, rank: 6 },
+  { school: "Asha Deep Adarsh High School - Karhans", score: 84, rank: 1 },
+  { school: "Govt. Senior Secondary School - Panipat City", score: 79, rank: 2 },
+  { school: "Model Sanskriti Senior Secondary School - Panipat", score: 76, rank: 3 },
+  { school: "Government Girls High School - Israna", score: 91, rank: 4 },
+  { school: "DAV Public School - Panipat", score: 88, rank: 5 },
+  { school: "Government High School - Samalkha", score: 71, rank: 6 },
 ];
 
 const climateData = {
@@ -975,7 +975,7 @@ const SuperAdminDashboard = () => {
 
       {/* School Rankings */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-        <Card title="🏆 School Health Rankings — Varanasi District">
+        <Card title="🏆 School Health Rankings — Panipat District">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {districtRanking.sort((a, b) => b.score - a.score).map((s, i) => (
               <div key={s.school} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
