@@ -43,7 +43,7 @@ services:
         fromService:
           type: web
           name: swasthyasetu-frontend
-          property: host
+          property: url
 
   - type: web
     name: swasthyasetu-frontend
@@ -56,7 +56,7 @@ services:
         fromService:
           type: web
           name: swasthyasetu-backend
-          property: host
+          property: url
       - key: VITE_PERSIST_SESSION
         value: "true"
 
