@@ -983,7 +983,7 @@ const TeacherDashboard = () => {
               <button onClick={() => callParent(s.parentPhone, s.name)} style={{ background: "#1e40af", color: "#fff", border: "none", borderRadius: "6px", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px" }}>
                 <Phone size={11} /> Call
               </button>
-              <button onClick={() => sendSMS(s.parentPhone, `Health update for ${s.name}: ${s.condition}. Please contact school health desk.`)} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: "6px", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px" }}>
+              <button onClick={() => sendSMS(s.parentPhone, { studentName: s.name, riskLevel: s.riskScore, condition: s.condition, language: "en" })} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: "6px", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px" }}>
                 <MessageSquare size={11} /> SMS
               </button>
             </div>
@@ -2151,15 +2151,43 @@ export default function SwasthyaSetu() {
     }, 250);
   }, []);
 
-  const sendSMS = useCallback((phone, message) => {
+  const sendSMS = useCallback(async (phone, message) => {
     const digits = String(phone || "").replace(/[^\d+]/g, "");
-    const body = encodeURIComponent(message || "Health notification from SwasthyaSetu.");
     if (!digits) {
       alert("SMS target number is missing.");
       return;
     }
+    let finalMessage = typeof message === "string" ? message : "Health notification from SwasthyaSetu.";
+
+    if (
+      message &&
+      typeof message === "object" &&
+      token &&
+      message.studentName &&
+      message.riskLevel
+    ) {
+      try {
+        const drafted = await apiRequest("/genai/parent-message", {
+          method: "POST",
+          token,
+          body: {
+            studentName: message.studentName,
+            riskLevel: String(message.riskLevel).toUpperCase(),
+            condition: message.condition || undefined,
+            language: message.language || "en"
+          }
+        });
+        if (drafted?.message) {
+          finalMessage = drafted.message;
+        }
+      } catch {
+        // keep fallback message if GenAI request fails
+      }
+    }
+
+    const body = encodeURIComponent(finalMessage || "Health notification from SwasthyaSetu.");
     window.location.href = `sms:${digits}?body=${body}`;
-  }, []);
+  }, [token]);
 
   const generateReport = useCallback((filename, payload) => {
     const normalized = filename || `report-${Date.now()}.txt`;

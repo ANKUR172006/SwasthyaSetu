@@ -75,6 +75,9 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_DAYS=7
 REDIS_URL=redis://localhost:6379
 AI_SERVICE_URL=http://localhost:8000
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=
 CORS_ORIGIN=http://localhost:5173
 FIELD_ENCRYPTION_KEY=optional_32_character_key
 ```
@@ -166,6 +169,10 @@ docker compose exec backend npm run prisma:seed
 ### Health Camps
 - `POST /health-camp`
 - `GET /health-camp/:school_id`
+
+### GenAI
+- `POST /genai/parent-message`
+- `POST /genai/school-summary`
 
 ## Seeded Pilot Accounts
 After `npm run prisma:seed`:

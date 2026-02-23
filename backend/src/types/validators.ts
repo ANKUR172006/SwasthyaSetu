@@ -118,3 +118,24 @@ export const clientErrorSchema = z.object({
   params: z.object({}),
   query: z.object({})
 });
+
+export const genAiParentMessageSchema = z.object({
+  body: z.object({
+    studentName: z.string().min(2).max(120),
+    riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    condition: z.string().min(1).max(160).optional(),
+    language: z.enum(["en", "hi"]).default("en")
+  }),
+  params: z.object({}),
+  query: z.object({})
+});
+
+export const genAiSchoolSummarySchema = z.object({
+  body: z.object({
+    schoolId: z.string().uuid(),
+    audience: z.enum(["SCHOOL_ADMIN", "DISTRICT_ADMIN"]).default("SCHOOL_ADMIN"),
+    language: z.enum(["en", "hi"]).default("en")
+  }),
+  params: z.object({}),
+  query: z.object({})
+});

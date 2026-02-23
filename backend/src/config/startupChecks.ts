@@ -29,4 +29,8 @@ export const runStartupChecks = (): void => {
   if (env.NODE_ENV === "production" && /localhost|127\.0\.0\.1/i.test(env.AI_SERVICE_URL)) {
     logger.warn({ aiServiceUrl: env.AI_SERVICE_URL }, "AI_SERVICE_URL points to localhost in production.");
   }
+
+  if (!env.LLM_API_KEY) {
+    logger.warn("LLM_API_KEY is not set. GenAI endpoints will use fallback templates.");
+  }
 };

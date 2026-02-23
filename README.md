@@ -137,6 +137,9 @@ Important variables:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `AI_SERVICE_URL`
+- `LLM_BASE_URL`
+- `LLM_MODEL`
+- `LLM_API_KEY`
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
 - `CORS_ORIGIN` (supports comma-separated allowlist)
@@ -182,6 +185,10 @@ Health Camps:
 
 Telemetry:
 - `POST /client-errors`
+
+GenAI:
+- `POST /genai/parent-message`
+- `POST /genai/school-summary`
 
 ## Security and Reliability
 - Helmet-enabled API hardening

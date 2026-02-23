@@ -15,6 +15,7 @@ import studentRoutes from "./routes/studentRoutes";
 import districtRoutes from "./routes/districtRoutes";
 import healthCampRoutes from "./routes/healthCampRoutes";
 import clientErrorRoutes from "./routes/clientErrorRoutes";
+import genAiRoutes from "./routes/genAiRoutes";
 import { getRiskTelemetry } from "./services/riskTelemetry";
 
 export const app = express();
@@ -104,6 +105,7 @@ app.use("/schools", schoolRoutes);
 app.use("/students", studentRoutes);
 app.use("/district", districtRoutes);
 app.use("/health-camp", healthCampRoutes);
+app.use("/genai", genAiRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
