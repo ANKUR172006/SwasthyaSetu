@@ -40,10 +40,7 @@ services:
       - key: JWT_REFRESH_EXPIRES_DAYS
         value: 7
       - key: CORS_ORIGIN
-        fromService:
-          type: web
-          name: swasthyasetu-frontend
-          property: url
+        value: https://swasthyasetu-frontend.onrender.com
 
   - type: web
     name: swasthyasetu-frontend
@@ -53,10 +50,7 @@ services:
     plan: free
     envVars:
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: swasthyasetu-backend
-          property: url
+        value: https://swasthyasetu-backend-dyip.onrender.com
       - key: VITE_PERSIST_SESSION
         value: "true"
 

@@ -8,7 +8,13 @@ const normalizeBaseUrl = (value) => {
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
   if (/^[a-z0-9.-]+(?::\d+)?$/i.test(raw)) {
-    return `${window.location.protocol === "http:" ? "http" : "https"}://${raw}`;
+    const [host, port] = raw.split(":");
+    const normalizedHost =
+      host.includes(".") || host === "localhost" || host === "127.0.0.1"
+        ? host
+        : `${host}.onrender.com`;
+    const withPort = port ? `${normalizedHost}:${port}` : normalizedHost;
+    return `${window.location.protocol === "http:" ? "http" : "https"}://${withPort}`;
   }
   return "";
 };
