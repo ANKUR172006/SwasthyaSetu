@@ -92,7 +92,7 @@ const UI_ROLE_TO_DEFAULT_NAME = {
   [ROLES.PARENT]: "Parent User",
 };
 
-const API_TIMEOUT_MS = 15000;
+const API_TIMEOUT_MS = 8000;
 
 const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
   const controller = new AbortController();
@@ -132,7 +132,7 @@ const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) 
 
 const apiRequest = async (path, options = {}) => {
   const candidates = [API_BASE_URL];
-  if (!import.meta.env.DEV && !rawApiBaseUrl) {
+  if (!import.meta.env.DEV) {
     for (const url of PROD_BACKEND_CANDIDATES) {
       if (!candidates.includes(url)) {
         candidates.push(url);
