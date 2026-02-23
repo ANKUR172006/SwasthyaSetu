@@ -76,6 +76,8 @@ const BACKEND_ROLE_LABEL = {
   PARENT: "Parent",
 };
 
+const DISTRICT_ANALYTICS_ROLES = new Set(["SUPER_ADMIN", "DISTRICT_ADMIN"]);
+
 const UI_ROLE_TO_BACKEND_ROLE = {
   [ROLES.SUPER_ADMIN]: "SUPER_ADMIN",
   [ROLES.SCHOOL_ADMIN]: "SCHOOL_ADMIN",
@@ -1819,10 +1821,11 @@ export default function SwasthyaSetu() {
   const loadBackendData = useCallback(
     async (authToken, userProfile) => {
       try {
-        const districtName = userProfile?.district || "Pune";
+        const districtName = userProfile?.district || "Pune, Maharashtra";
+        const canViewDistrictAnalytics = DISTRICT_ANALYTICS_ROLES.has(userProfile?.backendRole || "");
         let schoolId = userProfile?.schoolId || null;
 
-        if (!schoolId && (userProfile?.backendRole === "SUPER_ADMIN" || userProfile?.backendRole === "DISTRICT_ADMIN")) {
+        if (!schoolId && canViewDistrictAnalytics) {
           const topRisk = await apiRequest(`/district/${encodeURIComponent(districtName)}/top-risk-schools`, { token: authToken });
           if (Array.isArray(topRisk) && topRisk.length > 0) {
             schoolId = topRisk[0].schoolId;
@@ -1867,33 +1870,35 @@ export default function SwasthyaSetu() {
           }
         }
 
-        const [districtComparison, climateRisk] = await Promise.all([
-          apiRequest(`/district/${encodeURIComponent(districtName)}/comparison`, { token: authToken }).catch(() => null),
-          apiRequest(`/district/${encodeURIComponent(districtName)}/climate-risk`, { token: authToken }).catch(() => null),
-        ]);
+        if (canViewDistrictAnalytics) {
+          const [districtComparison, climateRisk] = await Promise.all([
+            apiRequest(`/district/${encodeURIComponent(districtName)}/comparison`, { token: authToken }).catch(() => null),
+            apiRequest(`/district/${encodeURIComponent(districtName)}/climate-risk`, { token: authToken }).catch(() => null),
+          ]);
 
-        if (Array.isArray(districtComparison) && districtComparison.length > 0) {
-          setDistrictRanking(
-            districtComparison.map((entry, idx) => ({
-              school: `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
-              score: Math.max(45, Math.min(98, Math.round((1 - Number(entry.avgRisk || 0)) * 100))),
-              rank: idx + 1,
-            }))
-          );
-        }
+          if (Array.isArray(districtComparison) && districtComparison.length > 0) {
+            setDistrictRanking(
+              districtComparison.map((entry, idx) => ({
+                school: `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
+                score: Math.max(45, Math.min(98, Math.round((1 - Number(entry.avgRisk || 0)) * 100))),
+                rank: idx + 1,
+              }))
+            );
+          }
 
-        if (climateRisk) {
-          setDistrictClimateRisk(climateRisk);
-          const envScore = Math.max(30, Math.min(95, Math.round(100 - (Number(climateRisk.avgAqi || 120) * 0.15 + Number(climateRisk.heatAlertDays || 0) * 2))));
-          setClimateMetrics({
-            envScore,
-            heatwaveRisk: Number(climateRisk.avgTemperature || 0) >= 40 ? "High" : Number(climateRisk.avgTemperature || 0) >= 35 ? "Medium" : "Low",
-            waterQuality: Math.max(40, Math.min(92, Math.round(100 - Number(climateRisk.avgAqi || 120) * 0.2))),
-            carbonFootprint: Number((1.6 + Number(climateRisk.avgAqi || 120) / 120).toFixed(1)),
-            treesPlanted: 142,
-            solarPanels: 12,
-            wasteRecycled: Math.max(40, Math.min(90, 85 - Number(climateRisk.heatAlertDays || 0))),
-          });
+          if (climateRisk) {
+            setDistrictClimateRisk(climateRisk);
+            const envScore = Math.max(30, Math.min(95, Math.round(100 - (Number(climateRisk.avgAqi || 120) * 0.15 + Number(climateRisk.heatAlertDays || 0) * 2))));
+            setClimateMetrics({
+              envScore,
+              heatwaveRisk: Number(climateRisk.avgTemperature || 0) >= 40 ? "High" : Number(climateRisk.avgTemperature || 0) >= 35 ? "Medium" : "Low",
+              waterQuality: Math.max(40, Math.min(92, Math.round(100 - Number(climateRisk.avgAqi || 120) * 0.2))),
+              carbonFootprint: Number((1.6 + Number(climateRisk.avgAqi || 120) / 120).toFixed(1)),
+              treesPlanted: 142,
+              solarPanels: 12,
+              wasteRecycled: Math.max(40, Math.min(90, 85 - Number(climateRisk.heatAlertDays || 0))),
+            });
+          }
         }
       } catch {
         // Keep dashboard usable with fallback mock data.
@@ -1960,7 +1965,7 @@ export default function SwasthyaSetu() {
         schoolId: me.schoolId || null,
         school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
         udise: "N/A",
-        district: "Pune",
+        district: "Pune, Maharashtra",
         state: "Maharashtra",
         class: "Class 6-A",
       };
@@ -2053,7 +2058,7 @@ export default function SwasthyaSetu() {
           schoolId: me.schoolId || null,
           school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
           udise: "N/A",
-          district: "Pune",
+          district: "Pune, Maharashtra",
           state: "Maharashtra",
           class: "Class 6-A",
         };
