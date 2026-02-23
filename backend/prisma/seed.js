@@ -19,8 +19,8 @@ async function main() {
   await prisma.school.deleteMany();
 
   const schools = await prisma.$transaction([
-    prisma.school.create({ data: { name: "PM SHRI Model School - Shivajinagar", udiseCode: "UDISE100201", type: SchoolType.GOVT, district: "Pune", infraScore: 82.4 } }),
-    prisma.school.create({ data: { name: "Green Bharat Public School - Kothrud", udiseCode: "UDISE100202", type: SchoolType.PRIVATE, district: "Pune", infraScore: 76.9 } }),
+    prisma.school.create({ data: { name: "Asha Deep Adarsh High School - Karhans", udiseCode: "UDISE100201", type: SchoolType.PRIVATE, district: "Panipat, Haryana", infraScore: 82.4 } }),
+    prisma.school.create({ data: { name: "Govt. Senior Secondary School - Panipat City", udiseCode: "UDISE100202", type: SchoolType.GOVT, district: "Panipat, Haryana", infraScore: 76.9 } }),
     prisma.school.create({ data: { name: "Delhi Nagar Nigam School - Karol Bagh", udiseCode: "UDISE200101", type: SchoolType.GOVT, district: "Delhi", infraScore: 71.2 } })
   ]);
 
@@ -28,10 +28,10 @@ async function main() {
 
   const [superAdmin, districtAdmin, schoolAdmin, teacher, parent] = await prisma.$transaction([
     prisma.user.create({ data: { name: "Platform Super Admin", email: "superadmin@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.SUPER_ADMIN } }),
-    prisma.user.create({ data: { name: "Pune District Admin", email: "district.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.DISTRICT_ADMIN } }),
-    prisma.user.create({ data: { name: "School Admin Pune", email: "schooladmin.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.SCHOOL_ADMIN, schoolId: schools[0].id } }),
-    prisma.user.create({ data: { name: "Teacher Pune", email: "teacher.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.TEACHER, schoolId: schools[0].id } }),
-    prisma.user.create({ data: { name: "Parent Pune", email: "parent.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.PARENT, schoolId: schools[0].id } })
+    prisma.user.create({ data: { name: "Panipat District Admin", email: "district.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.DISTRICT_ADMIN } }),
+    prisma.user.create({ data: { name: "School Admin Panipat", email: "schooladmin.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.SCHOOL_ADMIN, schoolId: schools[0].id } }),
+    prisma.user.create({ data: { name: "Teacher Panipat", email: "teacher.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.TEACHER, schoolId: schools[0].id } }),
+    prisma.user.create({ data: { name: "Parent Panipat", email: "parent.pune@swasthyasetu.in", passwordHash: adminPasswordHash, role: UserRole.PARENT, schoolId: schools[0].id } })
   ]);
 
   const studentPayload = [
@@ -75,7 +75,7 @@ async function main() {
 
   const now = new Date();
   await prisma.$transaction([
-    prisma.climateData.create({ data: { district: "Pune", date: now, temperature: 39.4, aqi: 154, heatAlertFlag: false } }),
+    prisma.climateData.create({ data: { district: "Panipat, Haryana", date: now, temperature: 40.1, aqi: 178, heatAlertFlag: true } }),
     prisma.climateData.create({ data: { district: "Delhi", date: now, temperature: 41.2, aqi: 232, heatAlertFlag: true } })
   ]);
 

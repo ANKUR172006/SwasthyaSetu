@@ -25,7 +25,7 @@ export const ensureDemoAccounts = async (): Promise<void> => {
   const school = await prisma.school.findFirst({
     where: {
       district: {
-        contains: "Pune",
+        contains: "Panipat",
         mode: "insensitive"
       }
     },
@@ -55,24 +55,24 @@ export const ensureDemoAccounts = async (): Promise<void> => {
       role: UserRole.SUPER_ADMIN
     },
     {
-      name: "Pune District Admin",
+      name: "Panipat District Admin",
       email: "district.pune@swasthyasetu.in",
       role: UserRole.DISTRICT_ADMIN
     },
     {
-      name: "School Admin Pune",
+      name: "School Admin Panipat",
       email: "schooladmin.pune@swasthyasetu.in",
       role: UserRole.SCHOOL_ADMIN,
       ...(defaultSchoolId ? { schoolId: defaultSchoolId } : {})
     },
     {
-      name: "Teacher Pune",
+      name: "Teacher Panipat",
       email: "teacher.pune@swasthyasetu.in",
       role: UserRole.TEACHER,
       ...(defaultSchoolId ? { schoolId: defaultSchoolId } : {})
     },
     {
-      name: "Parent Pune",
+      name: "Parent Panipat",
       email: "parent.pune@swasthyasetu.in",
       role: UserRole.PARENT,
       ...(defaultSchoolId ? { schoolId: defaultSchoolId } : {}),
@@ -104,4 +104,3 @@ export const ensureDemoAccounts = async (): Promise<void> => {
     logger.info({ created }, "Demo accounts ensured");
   }
 };
-

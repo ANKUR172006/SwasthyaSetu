@@ -5,7 +5,8 @@ import { prisma } from "../config/prisma";
 import { logger } from "../config/logger";
 
 const seedSchools = [
-  { name: "PM SHRI Model School - Shivajinagar", district: "Pune", type: SchoolType.GOVT },
+  { name: "Asha Deep Adarsh High School - Karhans", district: "Panipat, Haryana", type: SchoolType.PRIVATE },
+  { name: "Govt. Senior Secondary School - Panipat City", district: "Panipat, Haryana", type: SchoolType.GOVT },
   { name: "Delhi Nagar Nigam School - Karol Bagh", district: "Delhi", type: SchoolType.GOVT },
   { name: "Bengaluru Vidya Kendra", district: "Bengaluru", type: SchoolType.PRIVATE },
   { name: "Ahmedabad Municipal School - Navrangpura", district: "Ahmedabad", type: SchoolType.GOVT },

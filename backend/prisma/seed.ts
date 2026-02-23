@@ -20,17 +20,17 @@ async function main() {
 
   const schoolSeed = [
     {
-      name: "PM SHRI Model School - Shivajinagar",
+      name: "Asha Deep Adarsh High School - Karhans",
       udiseCode: "UDISE100201",
-      type: SchoolType.GOVT,
-      district: "Pune, Maharashtra",
+      type: SchoolType.PRIVATE,
+      district: "Panipat, Haryana",
       infraScore: 82.4
     },
     {
-      name: "Green Bharat Public School - Kothrud",
+      name: "Govt. Senior Secondary School - Panipat City",
       udiseCode: "UDISE100202",
-      type: SchoolType.PRIVATE,
-      district: "Pune, Maharashtra",
+      type: SchoolType.GOVT,
+      district: "Panipat, Haryana",
       infraScore: 76.9
     },
     {
@@ -96,7 +96,7 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        name: "Pune District Admin",
+        name: "Panipat District Admin",
         email: "district.pune@swasthyasetu.in",
         passwordHash: adminPasswordHash,
         role: UserRole.DISTRICT_ADMIN
@@ -104,7 +104,7 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        name: "School Admin Pune",
+        name: "School Admin Panipat",
         email: "schooladmin.pune@swasthyasetu.in",
         passwordHash: adminPasswordHash,
         role: UserRole.SCHOOL_ADMIN,
@@ -113,7 +113,7 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        name: "Teacher Pune",
+        name: "Teacher Panipat",
         email: "teacher.pune@swasthyasetu.in",
         passwordHash: adminPasswordHash,
         role: UserRole.TEACHER,
@@ -196,7 +196,7 @@ async function main() {
 
   const parent = await prisma.user.create({
     data: {
-      name: "Parent Pune",
+      name: "Parent Panipat",
       email: "parent.pune@swasthyasetu.in",
       passwordHash: adminPasswordHash,
       role: UserRole.PARENT,
@@ -222,11 +222,11 @@ async function main() {
   await prisma.$transaction([
     prisma.climateData.create({
       data: {
-        district: "Pune, Maharashtra",
+        district: "Panipat, Haryana",
         date: now,
-        temperature: 39.4,
-        aqi: 154,
-        heatAlertFlag: false
+        temperature: 40.1,
+        aqi: 178,
+        heatAlertFlag: true
       }
     }),
     prisma.climateData.create({

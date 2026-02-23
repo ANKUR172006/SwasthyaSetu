@@ -1821,7 +1821,7 @@ export default function SwasthyaSetu() {
   const loadBackendData = useCallback(
     async (authToken, userProfile) => {
       try {
-        const districtName = userProfile?.district || "Pune, Maharashtra";
+        const districtName = userProfile?.district || "Panipat, Haryana";
         const canViewDistrictAnalytics = DISTRICT_ANALYTICS_ROLES.has(userProfile?.backendRole || "");
         let schoolId = userProfile?.schoolId || null;
 
@@ -1965,8 +1965,8 @@ export default function SwasthyaSetu() {
         schoolId: me.schoolId || null,
         school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
         udise: "N/A",
-        district: "Pune, Maharashtra",
-        state: "Maharashtra",
+        district: "Panipat, Haryana",
+        state: "Haryana",
         class: "Class 6-A",
       };
       setUser(mappedUser);
@@ -2058,8 +2058,8 @@ export default function SwasthyaSetu() {
           schoolId: me.schoolId || null,
           school: me.schoolId ? `School ${String(me.schoolId).slice(0, 6).toUpperCase()}` : "District Admin Office",
           udise: "N/A",
-          district: "Pune, Maharashtra",
-          state: "Maharashtra",
+          district: "Panipat, Haryana",
+          state: "Haryana",
           class: "Class 6-A",
         };
         setUser(mappedUser);
