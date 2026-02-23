@@ -103,4 +103,51 @@ export const ensureDemoAccounts = async (): Promise<void> => {
   if (created > 0) {
     logger.info({ created }, "Demo accounts ensured");
   }
+
+  if (defaultSchoolId) {
+    const existingStudents = await prisma.student.count({
+      where: { schoolId: defaultSchoolId }
+    });
+
+    if (existingStudents === 0) {
+      const sampleStudents = [
+        { className: "6A", gender: "F", heightCm: 137, weightKg: 31, vaccinationStatus: "COMPLETE", attendanceRatio: 0.93, riskScore: 0.28 },
+        { className: "6B", gender: "M", heightCm: 139, weightKg: 34, vaccinationStatus: "PARTIAL", attendanceRatio: 0.88, riskScore: 0.46 },
+        { className: "7A", gender: "F", heightCm: 144, weightKg: 37, vaccinationStatus: "DELAYED", attendanceRatio: 0.81, riskScore: 0.62 },
+        { className: "7B", gender: "M", heightCm: 146, weightKg: 39, vaccinationStatus: "COMPLETE", attendanceRatio: 0.9, riskScore: 0.33 },
+        { className: "8A", gender: "F", heightCm: 151, weightKg: 44, vaccinationStatus: "PARTIAL", attendanceRatio: 0.84, riskScore: 0.55 }
+      ];
+
+      const createdStudents = [];
+      for (const student of sampleStudents) {
+        const bmi = Number((student.weightKg / ((student.heightCm / 100) ** 2)).toFixed(2));
+        const createdStudent = await prisma.student.create({
+          data: {
+            schoolId: defaultSchoolId,
+            className: student.className,
+            gender: student.gender,
+            heightCm: student.heightCm,
+            weightKg: student.weightKg,
+            bmi,
+            vaccinationStatus: student.vaccinationStatus,
+            attendanceRatio: student.attendanceRatio,
+            riskScore: student.riskScore
+          },
+          select: { id: true, bmi: true, vaccinationStatus: true }
+        });
+        createdStudents.push(createdStudent);
+      }
+
+      await prisma.schemeEligibility.createMany({
+        data: createdStudents.map((student) => ({
+          studentId: student.id,
+          ayushmanEligible: student.bmi < 16.5 || student.bmi > 28,
+          rbsrFlag: student.vaccinationStatus !== "COMPLETE",
+          middayMealStatus: student.bmi < 18.5 ? "PRIORITY" : "REGULAR"
+        }))
+      });
+
+      logger.info({ schoolId: defaultSchoolId, created: createdStudents.length }, "Demo students ensured for default school");
+    }
+  }
 };
