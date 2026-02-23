@@ -27,15 +27,28 @@ const districtFilter = (district: string) => {
   };
 };
 
-const schoolWhereForDistrict = (district: string, isAllIndia: boolean) =>
-  isAllIndia
-    ? {}
-    : {
-        district: {
-          contains: district.trim(),
-          mode: "insensitive" as const
-        }
-      };
+const districtVariants = (district: string): string[] => {
+  const normalized = district.trim();
+  if (!normalized) return [];
+  const parts = normalized
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return [...new Set([normalized, ...parts])];
+};
+
+const schoolWhereForDistrict = (district: string, isAllIndia: boolean) => {
+  if (isAllIndia) return {};
+  const variants = districtVariants(district);
+  return {
+    OR: variants.map((value) => ({
+      district: {
+        contains: value,
+        mode: "insensitive" as const
+      }
+    }))
+  };
+};
 
 const boundedScore = (value: number): number => Math.max(0, Math.min(100, Number(value.toFixed(2))));
 
@@ -206,10 +219,12 @@ export const districtClimateRisk = async (district: string) => {
       })
     : await prisma.climateData.findMany({
         where: {
-          district: {
-            contains: district.trim(),
-            mode: "insensitive"
-          }
+          OR: districtVariants(district).map((value) => ({
+            district: {
+              contains: value,
+              mode: "insensitive"
+            }
+          }))
         },
         orderBy: { date: "desc" },
         take: 7
