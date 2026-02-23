@@ -139,3 +139,24 @@ export const genAiSchoolSummarySchema = z.object({
   params: z.object({}),
   query: z.object({})
 });
+
+export const communicationParentAlertSchema = z.object({
+  body: z.object({
+    phone: z.string().min(8).max(20),
+    studentName: z.string().min(2).max(120),
+    riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    condition: z.string().min(1).max(160).optional(),
+    language: z.enum(["en", "hi"]).default("en"),
+    message: z.string().min(1).max(280).optional()
+  }),
+  params: z.object({}),
+  query: z.object({})
+});
+
+export const communicationListSchema = z.object({
+  body: z.object({}),
+  params: z.object({}),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20)
+  })
+});

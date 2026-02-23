@@ -78,6 +78,9 @@ AI_SERVICE_URL=http://localhost:8000
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_FROM_NUMBER=
 CORS_ORIGIN=http://localhost:5173
 FIELD_ENCRYPTION_KEY=optional_32_character_key
 ```
@@ -173,6 +176,10 @@ docker compose exec backend npm run prisma:seed
 ### GenAI
 - `POST /genai/parent-message`
 - `POST /genai/school-summary`
+
+### Communications
+- `POST /communications/parent-alert`
+- `GET /communications/parent-alert?limit=20`
 
 ## Seeded Pilot Accounts
 After `npm run prisma:seed`:

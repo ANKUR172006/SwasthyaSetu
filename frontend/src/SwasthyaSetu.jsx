@@ -791,7 +791,7 @@ const Navbar = ({ collapsed, setCollapsed, activePage, setActivePage }) => {
 // ============================================================
 
 const SchoolAdminDashboard = () => {
-  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData } = useApp();
+  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
   const schoolAdminComparison = (Array.isArray(districtRanking) ? districtRanking : [])
@@ -907,6 +907,17 @@ const SchoolAdminDashboard = () => {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: "16px" }}>
+        <Card
+          title="GenAI School Brief"
+          action={<Button size="sm" variant="secondary" onClick={refreshGenAiSchoolSummary}>Refresh</Button>}
+        >
+          <p style={{ color: th.text, fontSize: "13px", lineHeight: 1.6 }}>
+            {genAiSchoolSummary || "No AI summary available yet."}
+          </p>
         </Card>
       </div>
     </div>
@@ -1063,7 +1074,7 @@ const ParentDashboard = () => {
 };
 
 const SuperAdminDashboard = () => {
-  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students } = useApp();
+  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students, genAiSchoolSummary, refreshGenAiSchoolSummary } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const normalizedRanking = (Array.isArray(districtRanking) ? districtRanking : [])
     .map((item, idx) => {
@@ -1136,6 +1147,14 @@ const SuperAdminDashboard = () => {
           </ResponsiveContainer>
         </Card>
       </div>
+      <Card
+        title="GenAI Executive Brief"
+        action={<Button size="sm" variant="secondary" onClick={refreshGenAiSchoolSummary}>Refresh</Button>}
+      >
+        <p style={{ color: th.text, fontSize: "13px", lineHeight: 1.6 }}>
+          {genAiSchoolSummary || "No executive brief available yet."}
+        </p>
+      </Card>
     </div>
   );
 };
@@ -1941,6 +1960,25 @@ export default function SwasthyaSetu() {
   const [districtRanking, setDistrictRanking] = useState(districtData);
   const [districtClimateRisk, setDistrictClimateRisk] = useState(null);
   const [climateMetrics, setClimateMetrics] = useState(climateData);
+  const [genAiSchoolSummary, setGenAiSchoolSummary] = useState("");
+
+  const refreshGenAiSchoolSummary = useCallback(async () => {
+    if (!token || !user?.schoolId) return;
+    try {
+      const summary = await apiRequest("/genai/school-summary", {
+        method: "POST",
+        token,
+        body: {
+          schoolId: user.schoolId,
+          audience: user.backendRole === "DISTRICT_ADMIN" || user.backendRole === "SUPER_ADMIN" ? "DISTRICT_ADMIN" : "SCHOOL_ADMIN",
+          language: "en"
+        }
+      });
+      setGenAiSchoolSummary(summary?.summary || "");
+    } catch {
+      // no-op: keep UI usable without GenAI
+    }
+  }, [token, user]);
 
   const loadBackendData = useCallback(
     async (authToken, userProfile) => {
@@ -1992,6 +2030,19 @@ export default function SwasthyaSetu() {
 
           if (schoolSummary?.school?.district && !userProfile?.district) {
             userProfile.district = schoolSummary.school.district;
+          }
+
+          const genAiSummary = await apiRequest("/genai/school-summary", {
+            method: "POST",
+            token: authToken,
+            body: {
+              schoolId,
+              audience: canViewDistrictAnalytics ? "DISTRICT_ADMIN" : "SCHOOL_ADMIN",
+              language: "en"
+            }
+          }).catch(() => null);
+          if (genAiSummary?.summary) {
+            setGenAiSchoolSummary(genAiSummary.summary);
           }
         }
 
@@ -2157,34 +2208,34 @@ export default function SwasthyaSetu() {
       alert("SMS target number is missing.");
       return;
     }
-    let finalMessage = typeof message === "string" ? message : "Health notification from SwasthyaSetu.";
-
-    if (
-      message &&
-      typeof message === "object" &&
-      token &&
-      message.studentName &&
-      message.riskLevel
-    ) {
+    if (message && typeof message === "object" && token && message.studentName && message.riskLevel) {
       try {
-        const drafted = await apiRequest("/genai/parent-message", {
+        const sent = await apiRequest("/communications/parent-alert", {
           method: "POST",
           token,
           body: {
+            phone: digits,
             studentName: message.studentName,
             riskLevel: String(message.riskLevel).toUpperCase(),
             condition: message.condition || undefined,
-            language: message.language || "en"
+            language: message.language || "en",
+            message: message.message || undefined
           }
         });
-        if (drafted?.message) {
-          finalMessage = drafted.message;
+        if (sent?.status === "sent" || sent?.status === "simulated") {
+          alert(`Parent alert ${String(sent.status).toUpperCase()} via ${sent.provider}.`);
+          if (sent.status === "simulated") {
+            const body = encodeURIComponent(sent.message || "Health notification from SwasthyaSetu.");
+            window.location.href = `sms:${digits}?body=${body}`;
+          }
+          return;
         }
       } catch {
-        // keep fallback message if GenAI request fails
+        // fallback to phone SMS intent
       }
     }
 
+    const finalMessage = typeof message === "string" ? message : "Health notification from SwasthyaSetu.";
     const body = encodeURIComponent(finalMessage || "Health notification from SwasthyaSetu.");
     window.location.href = `sms:${digits}?body=${body}`;
   }, [token]);
@@ -2251,6 +2302,8 @@ export default function SwasthyaSetu() {
         districtRanking,
         districtClimateRisk,
         climateMetrics,
+        genAiSchoolSummary,
+        refreshGenAiSchoolSummary,
         createHealthCamp,
         callParent,
         sendSMS,

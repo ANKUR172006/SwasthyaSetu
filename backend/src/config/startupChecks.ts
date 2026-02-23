@@ -33,4 +33,8 @@ export const runStartupChecks = (): void => {
   if (!env.LLM_API_KEY) {
     logger.warn("LLM_API_KEY is not set. GenAI endpoints will use fallback templates.");
   }
+
+  if (env.TWILIO_ACCOUNT_SID && (!env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM_NUMBER)) {
+    logger.warn("TWILIO_ACCOUNT_SID is set but TWILIO_AUTH_TOKEN or TWILIO_FROM_NUMBER is missing.");
+  }
 };

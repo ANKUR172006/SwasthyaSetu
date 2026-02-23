@@ -190,6 +190,10 @@ GenAI:
 - `POST /genai/parent-message`
 - `POST /genai/school-summary`
 
+Communications:
+- `POST /communications/parent-alert`
+- `GET /communications/parent-alert?limit=20`
+
 ## Security and Reliability
 - Helmet-enabled API hardening
 - CORS allowlist with hostname/origin matching
