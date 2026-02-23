@@ -103,6 +103,7 @@ const BACKEND_ROLE_LABEL = {
 };
 
 const DISTRICT_ANALYTICS_ROLES = new Set(["SUPER_ADMIN", "DISTRICT_ADMIN"]);
+const DISTRICT_COMPARISON_ROLES = new Set(["SUPER_ADMIN", "DISTRICT_ADMIN", "SCHOOL_ADMIN"]);
 
 const UI_ROLE_TO_BACKEND_ROLE = {
   [ROLES.SUPER_ADMIN]: "SUPER_ADMIN",
@@ -790,9 +791,21 @@ const Navbar = ({ collapsed, setCollapsed, activePage, setActivePage }) => {
 // ============================================================
 
 const SchoolAdminDashboard = () => {
-  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData } = useApp();
+  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
+  const schoolAdminComparison = (Array.isArray(districtRanking) ? districtRanking : [])
+    .map((item, idx) => {
+      const numericScore = Number(item?.score);
+      if (!Number.isFinite(numericScore)) return null;
+      return {
+        school: String(item?.school || `School ${idx + 1}`),
+        score: Math.max(0, Math.min(100, Math.round(numericScore))),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
 
   return (
     <div>
@@ -872,6 +885,30 @@ const SchoolAdminDashboard = () => {
           ))}
         </div>
       </Card>
+
+      <div style={{ marginTop: "16px" }}>
+        <Card title="District Comparison (Admin View)">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={(schoolAdminComparison.length > 0 ? schoolAdminComparison : districtData.slice(0, 8)).map((entry) => ({
+                ...entry,
+                shortSchool: toDisplaySchoolLabel(entry.school),
+              }))}
+              margin={{ top: 8, right: 12, left: 0, bottom: 54 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+              <XAxis dataKey="shortSchool" angle={-25} textAnchor="end" interval={0} height={62} tick={{ fontSize: 10, fill: th.textMuted }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: th.textMuted }} />
+              <Tooltip contentStyle={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "8px" }} />
+              <Bar dataKey="score" name="District Health Score" radius={[4, 4, 0, 0]}>
+                {(schoolAdminComparison.length > 0 ? schoolAdminComparison : districtData.slice(0, 8)).map((entry, i) => (
+                  <Cell key={i} fill={entry.score >= 85 ? "#22c55e" : entry.score >= 75 ? "#3b82f6" : "#f59e0b"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -1910,6 +1947,7 @@ export default function SwasthyaSetu() {
       try {
         const districtName = userProfile?.district || "Panipat, Haryana";
         const canViewDistrictAnalytics = DISTRICT_ANALYTICS_ROLES.has(userProfile?.backendRole || "");
+        const canViewDistrictComparison = DISTRICT_COMPARISON_ROLES.has(userProfile?.backendRole || "");
         let schoolId = userProfile?.schoolId || null;
 
         if (!schoolId && canViewDistrictAnalytics) {
@@ -1957,10 +1995,12 @@ export default function SwasthyaSetu() {
           }
         }
 
-        if (canViewDistrictAnalytics) {
+        if (canViewDistrictComparison) {
           const [districtComparison, climateRisk] = await Promise.all([
             apiRequest(`/district/${encodeURIComponent(districtName)}/comparison`, { token: authToken }).catch(() => null),
-            apiRequest(`/district/${encodeURIComponent(districtName)}/climate-risk`, { token: authToken }).catch(() => null),
+            canViewDistrictAnalytics
+              ? apiRequest(`/district/${encodeURIComponent(districtName)}/climate-risk`, { token: authToken }).catch(() => null)
+              : Promise.resolve(null),
           ]);
 
           if (Array.isArray(districtComparison) && districtComparison.length > 0) {

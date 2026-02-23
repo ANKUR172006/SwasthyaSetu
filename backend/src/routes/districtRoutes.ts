@@ -12,19 +12,19 @@ router.use(authenticate);
 
 router.get(
   "/:name/comparison",
-  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN),
+  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN, UserRole.SCHOOL_ADMIN),
   validate(districtParamSchema),
   districtController.comparison
 );
 router.get(
   "/:name/climate-risk",
-  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN),
+  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN, UserRole.SCHOOL_ADMIN),
   validate(districtParamSchema),
   districtController.climateRisk
 );
 router.get(
   "/:name/top-risk-schools",
-  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN),
+  authorize(UserRole.SUPER_ADMIN, UserRole.DISTRICT_ADMIN, UserRole.SCHOOL_ADMIN),
   validate(districtParamSchema),
   districtController.topRiskSchools
 );
