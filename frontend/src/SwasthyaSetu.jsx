@@ -95,6 +95,7 @@ const UI_ROLE_TO_DEFAULT_NAME = {
 };
 
 const API_TIMEOUT_MS = 8000;
+const PERSIST_SESSION = String(import.meta.env.VITE_PERSIST_SESSION || "false").toLowerCase() === "true";
 
 const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
   const controller = new AbortController();
@@ -1810,7 +1811,7 @@ const AppContent = () => {
 export default function SwasthyaSetu() {
   const [user, setUser] = useState(null);
   const [darkMode, setDarkMode] = useState(false);
-  const [token, setToken] = useState(() => localStorage.getItem("swasthya_token") || "");
+  const [token, setToken] = useState(() => (PERSIST_SESSION ? localStorage.getItem("swasthya_token") || "" : ""));
   const [studentsData, setStudentsData] = useState(students);
   const [healthCampsData, setHealthCampsData] = useState(healthCamps);
   const [schemeCoverage, setSchemeCoverage] = useState(schemeData);
@@ -1953,7 +1954,9 @@ export default function SwasthyaSetu() {
       if (!accessToken) {
         throw new Error("Access token missing");
       }
-      localStorage.setItem("swasthya_token", accessToken);
+      if (PERSIST_SESSION) {
+        localStorage.setItem("swasthya_token", accessToken);
+      }
       setToken(accessToken);
 
       const me = await apiRequest("/auth/me", { token: accessToken });
@@ -2047,6 +2050,11 @@ export default function SwasthyaSetu() {
   }, []);
 
   useEffect(() => {
+    if (!PERSIST_SESSION) {
+      localStorage.removeItem("swasthya_token");
+      return;
+    }
+
     const bootstrap = async () => {
       if (!token || user) return;
       try {
