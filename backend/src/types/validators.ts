@@ -106,3 +106,15 @@ export const studentListSchema = z.object({
     schoolId: z.string().uuid().optional()
   })
 });
+
+export const clientErrorSchema = z.object({
+  body: z.object({
+    source: z.string().min(1).max(50).default("frontend"),
+    level: z.enum(["info", "warn", "error"]).default("error"),
+    message: z.string().min(1).max(240),
+    details: z.record(z.any()).optional(),
+    path: z.string().max(300).optional()
+  }),
+  params: z.object({}),
+  query: z.object({})
+});

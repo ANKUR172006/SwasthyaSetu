@@ -3,12 +3,14 @@ import { env } from "./config/env";
 import { prisma } from "./config/prisma";
 import { redis } from "./config/redis";
 import { logger } from "./config/logger";
+import { runStartupChecks } from "./config/startupChecks";
 import { scheduleBackgroundJobs } from "./jobs/scheduler";
 import { syncSchoolDirectoryData } from "./services/ingestionService";
 import { ensureDemoAccounts } from "./services/bootstrapService";
 
 const bootstrap = async () => {
   try {
+    runStartupChecks();
     await prisma.$connect();
     await redis.ping();
     await syncSchoolDirectoryData(env.UDISE_CSV_PATH);

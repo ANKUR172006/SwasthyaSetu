@@ -5,7 +5,8 @@ import { ApiError } from "../utils/apiError";
 const refreshCookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as "none" | "lax",
+  path: "/",
   maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
@@ -64,7 +65,12 @@ export const logout = async (req: Request, res: Response, next: NextFunction) =>
     if (token) {
       await authService.logout(token);
     }
-    res.clearCookie("refreshToken");
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/"
+    });
     res.status(204).send();
   } catch (error) {
     next(error);

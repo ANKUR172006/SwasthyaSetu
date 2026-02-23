@@ -17,18 +17,15 @@
   - `GET /health` returns status JSON.
 
 ## 3. Set Frontend API URL
-After backend gets its real public URL:
-1. Open `swasthyasetu-frontend` service in Render.
-2. Set env var:
-   - `VITE_API_BASE_URL=https://<your-backend-service>.onrender.com`
-3. Trigger redeploy of frontend.
+`render.yaml` now wires this automatically via `fromService` (`swasthyasetu-backend` host).
+No manual hardcoded URL is required.
 
 ## 4. CORS (if needed)
-If browser API calls fail:
-1. Open `swasthyasetu-backend` env vars.
-2. Set:
-   - `CORS_ORIGIN=https://<your-frontend-service>.onrender.com`
-3. Redeploy backend.
+`render.yaml` now wires backend `CORS_ORIGIN` automatically from frontend host.
+Backend also supports comma-separated allowlists and hostname entries.
+
+Example:
+- `CORS_ORIGIN=https://app.example.com,frontend.example.com`
 
 ## 5. Optional Real School Data
 If you want real UDISE CSV import:
@@ -41,3 +38,9 @@ If you want real UDISE CSV import:
 - Parent dashboard loads child profile.
 - Alerts page opens.
 - Backend `/health` shows `aiReliability` metrics.
+
+## 7. Smoke Test Automation
+- Local/manual: run `backend` smoke flow with:
+  - `SMOKE_BASE_URL=https://<backend-host> npm run test:smoke`
+- CI: set repo secrets `SMOKE_BASE_URL`, `SMOKE_EMAIL`, `SMOKE_PASSWORD`.
+- Workflow file: `.github/workflows/smoke-test.yml` runs on PR and `main` pushes.

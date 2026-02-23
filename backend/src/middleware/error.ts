@@ -8,17 +8,27 @@ export const notFoundHandler = (_req: Request, _res: Response, next: NextFunctio
 
 export const errorHandler = (
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
+  const requestId = (req as Request & { id?: string }).id;
   if (statusCode >= 500) {
-    logger.error(err);
+    logger.error(
+      {
+        err,
+        requestId,
+        method: req.method,
+        path: req.path
+      },
+      "Unhandled API error"
+    );
   }
 
   res.status(statusCode).json({
     error: err.message,
-    statusCode
+    statusCode,
+    requestId
   });
 };

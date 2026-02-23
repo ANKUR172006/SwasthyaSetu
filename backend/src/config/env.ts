@@ -14,6 +14,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().min(1),
   AI_SERVICE_URL: z.string().min(1).default("http://ai-service:8000"),
   CORS_ORIGIN: z.string().default("*"),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   FIELD_ENCRYPTION_KEY: z.string().optional(),
   UDISE_CSV_PATH: z.string().optional()
 });

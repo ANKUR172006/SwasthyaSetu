@@ -42,15 +42,35 @@ const ROLES = {
   PARENT: "parent",
 };
 
-const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const runtimeConfig = (typeof window !== "undefined" && window.__APP_CONFIG__) ? window.__APP_CONFIG__ : {};
+const normalizeApiBaseUrl = (value) => {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^[a-z0-9.-]+(?::\d+)?$/i.test(raw)) {
+    return `${import.meta.env.DEV ? "http" : "https"}://${raw}`;
+  }
+  return raw;
+};
+const runtimeApiBaseUrl = normalizeApiBaseUrl(runtimeConfig.API_BASE_URL);
+const buildApiBaseUrl = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const rawApiBaseUrl = runtimeApiBaseUrl || buildApiBaseUrl;
 const hasPlaceholderApiUrl = /replace_with_backend_url/i.test(rawApiBaseUrl);
-const PROD_BACKEND_CANDIDATES = [
-  "https://swasthyasetu-backend-dyip.onrender.com",
-  "https://swasthyasetu-backend.onrender.com",
-];
-const API_BASE_URL = rawApiBaseUrl && !hasPlaceholderApiUrl
-  ? rawApiBaseUrl.replace(/\/+$/, "")
-  : (import.meta.env.DEV ? "http://localhost:8080" : PROD_BACKEND_CANDIDATES[0]);
+const API_BASE_URL = rawApiBaseUrl && !hasPlaceholderApiUrl ? rawApiBaseUrl : (import.meta.env.DEV ? "http://localhost:8080" : "");
+const PROD_BACKEND_CANDIDATES = [API_BASE_URL, "https://swasthyasetu-backend.onrender.com"].filter(Boolean);
+const API_CONFIG_ERROR = (() => {
+  if (import.meta.env.DEV) return "";
+  if (!API_BASE_URL) return "Missing API base URL. Set VITE_API_BASE_URL on frontend service.";
+  try {
+    const parsed = new URL(API_BASE_URL);
+    if (parsed.protocol !== "https:") {
+      return "API base URL must use HTTPS in production.";
+    }
+    return "";
+  } catch {
+    return "Invalid API base URL format.";
+  }
+})();
 
 const ROLE_LOGIN_MAP = {
   [ROLES.SUPER_ADMIN]: { email: "superadmin@swasthyasetu.in", password: "Admin@1234" },
@@ -95,7 +115,33 @@ const UI_ROLE_TO_DEFAULT_NAME = {
 };
 
 const API_TIMEOUT_MS = 8000;
-const PERSIST_SESSION = String(import.meta.env.VITE_PERSIST_SESSION || "false").toLowerCase() === "true";
+const runtimePersistSession = String(runtimeConfig.PERSIST_SESSION || "").toLowerCase();
+const PERSIST_SESSION = (runtimePersistSession ? runtimePersistSession === "true" : String(import.meta.env.VITE_PERSIST_SESSION || "false").toLowerCase() === "true");
+let lastClientErrorAt = 0;
+
+const emitClientError = (errorPayload) => {
+  const now = Date.now();
+  if (now - lastClientErrorAt < 5000) {
+    return;
+  }
+  lastClientErrorAt = now;
+  const targets = [API_BASE_URL, ...PROD_BACKEND_CANDIDATES].filter(Boolean);
+  const payload = {
+    source: "frontend",
+    message: errorPayload.message || "frontend_error",
+    level: errorPayload.level || "error",
+    details: errorPayload.details || {},
+    path: typeof window !== "undefined" ? window.location.pathname : ""
+  };
+  for (const target of [...new Set(targets)]) {
+    fetch(`${target}/client-errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(() => {});
+  }
+};
 
 const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
   const controller = new AbortController();
@@ -120,7 +166,9 @@ const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) 
       } catch {
         // ignore parse errors
       }
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
     }
 
     if (response.status === 204) {
@@ -134,32 +182,42 @@ const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) 
 };
 
 const apiRequest = async (path, options = {}) => {
-  const candidates = [API_BASE_URL];
-  if (!import.meta.env.DEV) {
-    for (const url of PROD_BACKEND_CANDIDATES) {
-      if (!candidates.includes(url)) {
-        candidates.push(url);
-      }
-    }
+  if (API_CONFIG_ERROR) {
+    throw new Error(API_CONFIG_ERROR);
   }
 
-  let lastError = null;
+  const candidates = [...new Set([API_BASE_URL, ...PROD_BACKEND_CANDIDATES].filter(Boolean))];
+  const errors = [];
   for (const baseUrl of candidates) {
     try {
       return await requestJson(baseUrl, path, options);
     } catch (error) {
-      lastError = error;
-      const isAbort = error?.name === "AbortError";
-      const isNetwork = error instanceof TypeError;
-      if (!isAbort && !isNetwork) {
-        throw error;
-      }
+      errors.push({ baseUrl, error });
     }
   }
 
-  if (lastError?.name === "AbortError") {
+  const timeoutFailure = errors.find((entry) => entry.error?.name === "AbortError");
+  if (timeoutFailure) {
+    emitClientError({
+      message: "api_timeout",
+      level: "warn",
+      details: { path, baseUrl: timeoutFailure.baseUrl }
+    });
     throw new Error("Request timed out. Please try again.");
   }
+  const firstMeaningfulFailure = errors.find((entry) => Number(entry.error?.status || 0) >= 400);
+  if (firstMeaningfulFailure) {
+    emitClientError({
+      message: "api_request_failed",
+      details: {
+        path,
+        statusCode: Number(firstMeaningfulFailure.error?.status || 0),
+        baseUrl: firstMeaningfulFailure.baseUrl
+      }
+    });
+    throw new Error(firstMeaningfulFailure.error?.message || "Request failed");
+  }
+  emitClientError({ message: "api_unreachable", details: { path } });
   throw new Error("Unable to reach backend API. Please check deployment and CORS settings.");
 };
 
