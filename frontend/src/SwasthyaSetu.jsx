@@ -1120,7 +1120,7 @@ const SuperAdminDashboard = () => {
           </div>
         </Card>
 
-        <Card title="District Comparison">
+        <Card title="District Comparison (Super Admin View)">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={sortedRanking.slice(0, 12).map((entry) => ({ ...entry, shortSchool: toDisplaySchoolLabel(entry.school) }))} margin={{ top: 8, right: 12, left: 0, bottom: 50 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
