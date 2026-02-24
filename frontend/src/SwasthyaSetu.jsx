@@ -2230,6 +2230,7 @@ export default function SwasthyaSetu() {
             riskLevel: String(message.riskLevel).toUpperCase(),
             condition: message.condition || undefined,
             language: message.language || "en",
+            readingLevel: message.readingLevel || "simple",
             message: message.message || undefined
           }
         });

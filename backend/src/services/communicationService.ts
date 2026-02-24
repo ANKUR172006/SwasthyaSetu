@@ -8,7 +8,8 @@ type ParentAlertInput = {
   studentName: string;
   riskLevel: "LOW" | "MEDIUM" | "HIGH";
   condition?: string;
-  language?: "en" | "hi";
+  language?: "en" | "hi" | "mr" | "bn" | "ta" | "te" | "kn" | "ml" | "gu" | "pa" | "ur";
+  readingLevel?: "simple" | "standard";
   message?: string;
 };
 
@@ -57,11 +58,12 @@ export const sendParentAlert = async (
   const phone = normalizePhone(payload.phone);
   const drafted = payload.message
     ? { message: payload.message, source: "manual", model: "manual-v1" }
-    : await generateParentMessage({
+      : await generateParentMessage({
         studentName: payload.studentName,
         riskLevel: payload.riskLevel,
         condition: payload.condition,
-        language: payload.language
+        language: payload.language,
+        readingLevel: payload.readingLevel
       });
 
   let status: "sent" | "simulated" = "simulated";
@@ -91,6 +93,8 @@ export const sendParentAlert = async (
         phoneLast4: phone.slice(-4),
         studentName: payload.studentName,
         riskLevel: payload.riskLevel,
+        language: payload.language ?? "en",
+        readingLevel: payload.readingLevel ?? "simple",
         messagePreview: drafted.message.slice(0, 140),
         status,
         provider,

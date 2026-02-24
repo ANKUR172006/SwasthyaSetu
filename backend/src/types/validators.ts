@@ -1,6 +1,9 @@
 import { UserRole } from "@prisma/client";
 import { z } from "zod";
 
+const messageLanguages = ["en", "hi", "mr", "bn", "ta", "te", "kn", "ml", "gu", "pa", "ur"] as const;
+const readingLevels = ["simple", "standard"] as const;
+
 export const registerSchema = z.object({
   body: z.object({
     name: z.string().min(2).max(120),
@@ -124,7 +127,8 @@ export const genAiParentMessageSchema = z.object({
     studentName: z.string().min(2).max(120),
     riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
     condition: z.string().min(1).max(160).optional(),
-    language: z.enum(["en", "hi"]).default("en")
+    language: z.enum(messageLanguages).default("en"),
+    readingLevel: z.enum(readingLevels).default("simple")
   }),
   params: z.object({}),
   query: z.object({})
@@ -134,7 +138,7 @@ export const genAiSchoolSummarySchema = z.object({
   body: z.object({
     schoolId: z.string().uuid(),
     audience: z.enum(["SCHOOL_ADMIN", "DISTRICT_ADMIN"]).default("SCHOOL_ADMIN"),
-    language: z.enum(["en", "hi"]).default("en")
+    language: z.enum(messageLanguages).default("en")
   }),
   params: z.object({}),
   query: z.object({})
@@ -146,7 +150,8 @@ export const communicationParentAlertSchema = z.object({
     studentName: z.string().min(2).max(120),
     riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]),
     condition: z.string().min(1).max(160).optional(),
-    language: z.enum(["en", "hi"]).default("en"),
+    language: z.enum(messageLanguages).default("en"),
+    readingLevel: z.enum(readingLevels).default("simple"),
     message: z.string().min(1).max(280).optional()
   }),
   params: z.object({}),
