@@ -67,6 +67,24 @@ const buildCorsOriginMatcher = (): CorsOptions["origin"] => {
   };
 };
 
+const pingAiHealth = async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const aiBase = env.AI_SERVICE_URL.replace(/\/+$/, "");
+    const response = await fetch(`${aiBase}/health`, { signal: controller.signal });
+    if (!response.ok) {
+      return { status: "error" as const, code: response.status };
+    }
+    return { status: "ok" as const, code: response.status };
+  } catch (error) {
+    logger.warn({ error }, "AI warmup ping failed");
+    return { status: "error" as const, code: 0 };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 app.use(helmet());
 app.use(
   cors({
@@ -99,6 +117,14 @@ app.get("/health", (_req, res) =>
     aiReliability: getRiskTelemetry()
   })
 );
+app.get("/warmup", async (_req, res) => {
+  const ai = await pingAiHealth();
+  res.json({
+    status: "ok",
+    backend: "awake",
+    ai
+  });
+});
 
 app.use("/client-errors", clientErrorRoutes);
 app.use("/auth", authRoutes);

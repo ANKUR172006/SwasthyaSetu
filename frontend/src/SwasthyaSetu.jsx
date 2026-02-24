@@ -122,6 +122,8 @@ const UI_ROLE_TO_DEFAULT_NAME = {
 };
 
 const API_TIMEOUT_MS = 8000;
+const API_WARMUP_TIMEOUT_MS = 35000;
+const API_MAX_RETRIES = 3;
 const runtimePersistSession = String(runtimeConfig.PERSIST_SESSION || "").toLowerCase();
 const PERSIST_SESSION = (runtimePersistSession ? runtimePersistSession === "true" : String(import.meta.env.VITE_PERSIST_SESSION || "false").toLowerCase() === "true");
 let lastClientErrorAt = 0;
@@ -150,9 +152,11 @@ const emitClientError = (errorPayload) => {
   }
 };
 
-const requestJson = async (baseUrl, path, { method = "GET", body, token } = {}) => {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const requestJson = async (baseUrl, path, { method = "GET", body, token, timeoutMs = API_TIMEOUT_MS } = {}) => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       method,
@@ -196,10 +200,26 @@ const apiRequest = async (path, options = {}) => {
   const candidates = [...new Set([API_BASE_URL, ...PROD_BACKEND_CANDIDATES].filter(Boolean))];
   const errors = [];
   for (const baseUrl of candidates) {
-    try {
-      return await requestJson(baseUrl, path, options);
-    } catch (error) {
-      errors.push({ baseUrl, error });
+    for (let attempt = 1; attempt <= API_MAX_RETRIES; attempt += 1) {
+      try {
+        return await requestJson(baseUrl, path, {
+          ...options,
+          timeoutMs: attempt === 1 ? API_WARMUP_TIMEOUT_MS : API_TIMEOUT_MS
+        });
+      } catch (error) {
+        const isTimeout = error?.name === "AbortError";
+        const status = Number(error?.status || 0);
+        const isServerBusy = status >= 500 || status === 429;
+        const isNetwork = status === 0;
+        const shouldRetry = attempt < API_MAX_RETRIES && (isTimeout || isServerBusy || isNetwork);
+
+        if (!shouldRetry) {
+          errors.push({ baseUrl, error });
+          break;
+        }
+
+        await sleep(1000 * attempt);
+      }
     }
   }
 
@@ -2264,6 +2284,10 @@ export default function SwasthyaSetu() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }, []);
+
+  useEffect(() => {
+    void apiRequest("/warmup").catch(() => {});
   }, []);
 
   useEffect(() => {
