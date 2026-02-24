@@ -9,6 +9,13 @@ cp .env.example .env
 npm run dev
 ```
 
+## Quality Commands
+```bash
+npm run lint
+npm run build
+npm run validate
+```
+
 Default API base URL:
 - `VITE_API_BASE_URL=http://localhost:8080`
 

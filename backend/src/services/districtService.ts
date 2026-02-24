@@ -116,7 +116,6 @@ export const districtComparison = async (district: string) => {
     }
   });
 
-  const schoolMap = new Map(schools.map((school) => [school.id, school]));
   const aggregateMap = new Map<
     string,
     {

@@ -204,6 +204,15 @@ cd backend
 npm test
 ```
 
+## Quality Commands
+```bash
+cd backend
+npm run lint
+npm run typecheck
+npm run build
+npm run validate
+```
+
 Covered:
 - Auth routes
 - Risk client integration logic

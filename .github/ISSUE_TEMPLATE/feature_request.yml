@@ -1,0 +1,22 @@
+name: Feature Request
+description: Propose a product or engineering improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What user pain does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success Metrics
+      description: How will we measure impact?
