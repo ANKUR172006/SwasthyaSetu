@@ -244,7 +244,8 @@ export const listStudents = async (page: number, pageSize: number, schoolId?: st
       where,
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      include: { schemeEligibility: true }
     }),
     prisma.student.count({ where })
   ]);

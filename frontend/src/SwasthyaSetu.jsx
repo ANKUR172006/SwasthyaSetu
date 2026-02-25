@@ -311,6 +311,93 @@ const riskLabelFromScore = (score) => {
 
 const hasItems = (value) => Array.isArray(value) && value.length > 0;
 
+const classLevelFromName = (className) => {
+  const normalized = String(className || "").trim();
+  if (!normalized) return null;
+  const match = normalized.match(/(\d{1,2})/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeClassLabel = (className) => {
+  const level = classLevelFromName(className);
+  if (!level) return "Class NA";
+  return `Class ${level}`;
+};
+
+const deriveStudentCategory = (student) => {
+  const attendance = Number(student?.attendance ?? 0);
+  const bmi = Number(student?.bmi ?? 0);
+  const risk = String(student?.riskScore || "Low");
+  if (risk === "High" || attendance < 75) return "Critical";
+  if (risk === "Medium" || bmi < 16 || bmi > 28) return "At Risk";
+  if (!student?.vaccinated || attendance < 85) return "Watchlist";
+  return "Stable";
+};
+
+const buildHealthDistribution = (studentList) => {
+  const total = Math.max(1, studentList.length);
+  const bucket = { healthy: 0, mild: 0, moderate: 0, high: 0 };
+  studentList.forEach((item) => {
+    if (item.riskScore === "High") {
+      bucket.high += 1;
+      return;
+    }
+    if (item.riskScore === "Medium") {
+      bucket.moderate += 1;
+      return;
+    }
+    if (!item.vaccinated || Number(item.bmi || 0) < 16.5 || Number(item.bmi || 0) > 25) {
+      bucket.mild += 1;
+      return;
+    }
+    bucket.healthy += 1;
+  });
+  return [
+    { name: "Healthy", value: Math.round((bucket.healthy * 100) / total), color: "#22c55e" },
+    { name: "Mild Issues", value: Math.round((bucket.mild * 100) / total), color: "#f59e0b" },
+    { name: "Moderate", value: Math.round((bucket.moderate * 100) / total), color: "#f97316" },
+    { name: "High Risk", value: Math.round((bucket.high * 100) / total), color: "#ef4444" },
+  ];
+};
+
+const buildAttendanceInsightData = (studentList) => {
+  const classMap = new Map();
+  studentList.forEach((student) => {
+    const label = normalizeClassLabel(student.class);
+    const current = classMap.get(label) || { attendanceTotal: 0, incidents: 0, count: 0, level: classLevelFromName(label) || 99 };
+    current.attendanceTotal += Number(student.attendance || 0);
+    current.incidents += student.riskScore === "High" ? 2 : student.riskScore === "Medium" ? 1 : 0;
+    current.count += 1;
+    classMap.set(label, current);
+  });
+
+  const computed = [...classMap.entries()]
+    .map(([label, value]) => ({
+      month: label.replace("Class ", "C"),
+      attendance: Math.round(value.attendanceTotal / Math.max(1, value.count)),
+      healthIncidents: value.incidents,
+      level: value.level
+    }))
+    .sort((a, b) => a.level - b.level)
+    .slice(0, 9);
+
+  return computed.length > 0 ? computed : attendanceData;
+};
+
+const buildScoreDomain = (ranking) => {
+  if (!Array.isArray(ranking) || ranking.length === 0) return [0, 100];
+  const values = ranking.map((item) => Number(item.score)).filter(Number.isFinite);
+  if (values.length === 0) return [0, 100];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (max - min < 5) {
+    return [Math.max(0, Math.floor(min - 3)), Math.min(100, Math.ceil(max + 3))];
+  }
+  return [Math.max(0, Math.floor(min - 2)), Math.min(100, Math.ceil(max + 2))];
+};
+
 const toDisplaySchoolLabel = (name) => {
   const normalized = String(name || "Unknown School").trim();
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
@@ -377,31 +464,75 @@ const mapBackendStudent = (student, idx = 0) => {
   const reasonCodes = Array.isArray(student?.riskExplanation?.reason_codes)
     ? student.riskExplanation.reason_codes
     : [];
+  const normalizedClass = normalizeClassLabel(student.className || student.class || "");
+  const classSuffixMatch = String(student.className || student.class || "").trim().match(/[A-Za-z]$/);
+  const section = classSuffixMatch ? classSuffixMatch[0].toUpperCase() : ["A", "B", "C"][idx % 3];
+  const eligibility = student?.schemeEligibility || {};
+  const vaccinated = String(student.vaccinationStatus || "").toUpperCase() === "COMPLETE";
+  const attendance = Math.round(Number(student.attendanceRatio ?? 0.9) * 100);
+  const bmiValue = Number(student.bmi ?? 0);
+  const fallbackName = `Student ${String(idx + 1).padStart(3, "0")}`;
   return {
     id: student.id,
-    name: `Student ${student.id.slice(0, 6).toUpperCase()}`,
+    name: String(student.name || fallbackName),
     age: 6 + (idx % 11),
     gender: student.gender || "Unknown",
-    class: student.className || student.class || "Class 6",
-    section: ["A", "B", "C"][idx % 3],
+    class: normalizedClass,
+    section,
     bloodGroup: ["A+", "B+", "O+", "AB+"][idx % 4],
     height: Number(student.heightCm ?? 0),
     weight: Number(student.weightKg ?? 0),
-    bmi: Number(student.bmi ?? 0),
+    bmi: bmiValue,
     riskScore,
     condition: riskScore === "High" ? "Needs Clinical Review" : riskScore === "Medium" ? "Under Observation" : "Healthy",
-    vaccinated: String(student.vaccinationStatus || "").toUpperCase() === "COMPLETE",
-    midDayMeal: true,
-    ayushmanCard: riskScore !== "Low",
-    rbsk: String(student.vaccinationStatus || "").toUpperCase() !== "COMPLETE",
-    attendance: Math.round(Number(student.attendanceRatio ?? 0.9) * 100),
+    vaccinated,
+    midDayMeal: String(eligibility?.middayMealStatus || "REGULAR").toUpperCase() !== "NONE",
+    ayushmanCard: typeof eligibility?.ayushmanEligible === "boolean" ? eligibility.ayushmanEligible : riskScore !== "Low",
+    rbsk: typeof eligibility?.rbsrFlag === "boolean" ? eligibility.rbsrFlag : !vaccinated,
+    attendance,
     lastCheckup: new Date(student.createdAt || Date.now()).toLocaleDateString("en-IN"),
     parentPhone: `98${String(10000000 + idx * 137).slice(0, 8)}`,
     address: "Ward-level school catchment, India",
     photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`,
+    category: deriveStudentCategory({ riskScore, attendance, bmi: bmiValue, vaccinated }),
     recommendedActions,
     reasonCodes
   };
+};
+
+const toReadableReason = (reasonCode) =>
+  String(reasonCode || "")
+    .toLowerCase()
+    .split("_")
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ");
+
+const buildDietAdvice = (student) => {
+  const tips = [];
+  const condition = String(student?.condition || "").toLowerCase();
+  const reasons = Array.isArray(student?.reasonCodes) ? student.reasonCodes : [];
+
+  if (condition.includes("anemia") || reasons.includes("BMI_OUT_OF_HEALTHY_RANGE")) {
+    tips.push("Add iron-rich foods daily: spinach, lentils, jaggery, dates, and roasted chana.");
+    tips.push("Pair meals with vitamin C sources like lemon or amla for better iron absorption.");
+  }
+
+  if (condition.includes("malnutrition") || student?.riskScore === "High") {
+    tips.push("Provide 3 balanced meals + 2 healthy snacks with protein (eggs/paneer/dal) each day.");
+    tips.push("Track weight weekly and share updates during school health follow-up.");
+  }
+
+  if (condition.includes("obesity")) {
+    tips.push("Reduce sugary drinks and fried snacks; prefer fruits, sprouts, and home-cooked meals.");
+    tips.push("Encourage 45-60 minutes of daily physical activity with adequate hydration.");
+  }
+
+  if (tips.length === 0) {
+    tips.push("Maintain a balanced plate: cereal + protein + vegetables + fruit + enough water.");
+    tips.push("Follow regular meal timing and avoid long gaps between meals.");
+  }
+
+  return tips.slice(0, 4);
 };
 
 const mapBackendCamp = (camp) => {
@@ -884,6 +1015,11 @@ const SchoolAdminDashboard = () => {
   const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
+  const averageAttendance = studentsData.length
+    ? Math.round(studentsData.reduce((sum, item) => sum + Number(item.attendance || 0), 0) / studentsData.length)
+    : 84;
+  const attendanceInsights = buildAttendanceInsightData(studentsData);
+  const healthDistributionData = buildHealthDistribution(studentsData);
   const schoolAdminComparison = (Array.isArray(districtRanking) ? districtRanking : [])
     .map((item, idx) => {
       const numericScore = Number(item?.score);
@@ -896,6 +1032,7 @@ const SchoolAdminDashboard = () => {
     .filter(Boolean)
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
+  const schoolComparisonDomain = buildScoreDomain(schoolAdminComparison);
 
   return (
     <div>
@@ -918,14 +1055,14 @@ const SchoolAdminDashboard = () => {
         <StatCard icon={Calendar} label="Upcoming Health Camps" value="2" color="#16a34a" />
         <StatCard icon={Shield} label="Scheme Coverage" value={`${Math.round((schemeCoverage[0]?.covered ?? 87) * 100 / Math.max(1, schemeCoverage[0]?.eligible ?? 100))}%`} change={3.2} color="#7c3aed" />
         <StatCard icon={Leaf} label="Climate Risk Score" value={`${climateMetrics.envScore}/100`} color="#059669" sub="AI Generated" />
-        <StatCard icon={Activity} label="Avg. Attendance" value="84%" change={-0.8} color="#0891b2" />
+        <StatCard icon={Activity} label="Avg. Attendance" value={`${averageAttendance}%`} change={-0.8} color="#0891b2" />
       </div>
 
       {/* Charts Row */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
         <Card title="Attendance vs Health Incidents (Monthly)">
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={attendanceData}>
+            <AreaChart data={attendanceInsights}>
               <defs>
                 <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -946,8 +1083,8 @@ const SchoolAdminDashboard = () => {
         <Card title="Health Distribution">
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={healthDistribution} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
-                {healthDistribution.map((entry, i) => (
+              <Pie data={healthDistributionData} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
+                {healthDistributionData.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
                 ))}
               </Pie>
@@ -988,7 +1125,7 @@ const SchoolAdminDashboard = () => {
             >
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
               <XAxis dataKey="shortSchool" angle={-25} textAnchor="end" interval={0} height={62} tick={{ fontSize: 10, fill: th.textMuted }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: th.textMuted }} />
+              <YAxis domain={schoolComparisonDomain} tick={{ fontSize: 11, fill: th.textMuted }} />
               <Tooltip contentStyle={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "8px" }} />
               <Bar dataKey="score" name="District Health Score" radius={[4, 4, 0, 0]}>
                 {(schoolAdminComparison.length > 0 ? schoolAdminComparison : districtData.slice(0, 8)).map((entry, i) => (
@@ -1096,9 +1233,13 @@ const TeacherDashboard = () => {
 };
 
 const ParentDashboard = () => {
-  const { darkMode, studentsData = students, callParent } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const child = studentsData[0] || students[46];
+  const reasonCodes = Array.isArray(child?.reasonCodes) ? child.reasonCodes : [];
+  const recommendedActions = Array.isArray(child?.recommendedActions) ? child.recommendedActions : [];
+  const dietAdvice = buildDietAdvice(child);
+  const backendRiskLevel = child?.riskScore === "High" ? "HIGH" : child?.riskScore === "Medium" ? "MEDIUM" : "LOW";
 
   const growthData = [
     { month: "Jan", height: 128, weight: 28, bmi: 17.1 },
@@ -1159,6 +1300,78 @@ const ParentDashboard = () => {
           </button>
         </div>
       )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Student Health Issue Details">
+          <p style={{ color: th.text, fontSize: "13px", fontWeight: 700, marginBottom: "8px" }}>
+            Current status: {child?.condition || "Under Observation"}
+          </p>
+          {reasonCodes.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+              {reasonCodes.map((code) => (
+                <Badge key={code} color={child?.riskScore === "High" ? "red" : "yellow"}>
+                  {toReadableReason(code)}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "8px" }}>
+              No specific risk codes available. Continue routine monitoring.
+            </p>
+          )}
+          <p style={{ color: th.textMuted, fontSize: "12px" }}>
+            Attendance: {child?.attendance}% | Vaccination: {child?.vaccinated ? "Up to Date" : "Pending"}
+          </p>
+        </Card>
+
+        <Card title="Diet Advice for Parent">
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {dietAdvice.map((tip, idx) => (
+              <p key={idx} style={{ color: th.text, fontSize: "12px" }}>• {tip}</p>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <Card title="Recommended Action Plan">
+        {recommendedActions.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "10px" }}>
+            {recommendedActions.map((action, idx) => (
+              <div key={`${action.type}-${idx}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{action.title}</p>
+                  <Badge color={action.priority === "high" ? "red" : action.priority === "medium" ? "yellow" : "green"}>
+                    {String(action.priority || "low").toUpperCase()}
+                  </Badge>
+                </div>
+                <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>{action.recommendation}</p>
+                {(action.tasks || []).slice(0, 2).map((task, tIdx) => (
+                  <p key={tIdx} style={{ color: th.text, fontSize: "11px" }}>• {task}</p>
+                ))}
+                <button
+                  onClick={() =>
+                    sendSMS(child?.parentPhone, {
+                      studentName: child?.name || "Student",
+                      riskLevel: backendRiskLevel,
+                      condition: child?.condition || undefined,
+                      language: "en",
+                      readingLevel: "simple",
+                      message: action.parentScript || "Please coordinate with school health desk for follow-up."
+                    })
+                  }
+                  style={{ marginTop: "8px", width: "100%", padding: "6px", background: th.accentLight, color: th.accent, border: `1px solid ${th.cardBorder}`, borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}
+                >
+                  Send Advice SMS
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ color: th.textMuted, fontSize: "12px" }}>
+            Action plan is being prepared. Please follow diet advice and consult school health desk.
+          </p>
+        )}
+      </Card>
     </div>
   );
 };
@@ -1172,7 +1385,7 @@ const SuperAdminDashboard = () => {
       if (!Number.isFinite(numericScore)) return null;
       return {
         school: String(item?.school || `School ${idx + 1}`),
-        score: Math.max(0, Math.min(100, Math.round(numericScore))),
+        score: Math.max(0, Math.min(100, Number(numericScore.toFixed(1)))),
         rank: Number(item?.rank || idx + 1)
       };
     })
@@ -1186,6 +1399,7 @@ const SuperAdminDashboard = () => {
   const avgDistrictScore = rankingData.length
     ? Math.round(rankingData.reduce((acc, item) => acc + item.score, 0) / rankingData.length)
     : 76;
+  const rankingDomain = buildScoreDomain(sortedRanking.slice(0, 12));
 
   return (
     <div>
@@ -1205,13 +1419,13 @@ const SuperAdminDashboard = () => {
             {sortedRanking.slice(0, 12).map((s, i) => (
               <div key={s.school} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
                 <div style={{ width: "28px", height: "28px", background: i < 3 ? ["#f59e0b", "#9ca3af", "#cd7c4f"][i] : "#e2e8f0", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 700, color: i < 3 ? "#fff" : th.textMuted }}>
-                  {i + 1}
+                  {s.rank || i + 1}
                 </div>
                 <div style={{ flex: 1 }}>
                   <p style={{ color: th.text, fontWeight: 600, fontSize: "13px" }}>{s.school}</p>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <p style={{ color: th.text, fontWeight: 700, fontSize: "15px" }}>{s.score}</p>
+                  <p style={{ color: th.text, fontWeight: 700, fontSize: "15px" }}>{s.score.toFixed(1)}</p>
                   <div style={{ height: "4px", width: "60px", background: "#e2e8f0", borderRadius: "2px" }}>
                     <div style={{ height: "100%", width: `${s.score}%`, background: s.score >= 85 ? "#22c55e" : s.score >= 75 ? "#f59e0b" : "#ef4444", borderRadius: "2px" }} />
                   </div>
@@ -1226,7 +1440,7 @@ const SuperAdminDashboard = () => {
             <BarChart data={sortedRanking.slice(0, 12).map((entry) => ({ ...entry, shortSchool: toDisplaySchoolLabel(entry.school) }))} margin={{ top: 8, right: 12, left: 0, bottom: 50 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
               <XAxis dataKey="shortSchool" angle={-25} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fill: th.textMuted }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: th.textMuted }} />
+              <YAxis domain={rankingDomain} tick={{ fontSize: 11, fill: th.textMuted }} />
               <Tooltip contentStyle={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "8px" }} />
               <Bar dataKey="score" name="Health Score" radius={[4, 4, 0, 0]}>
                 {sortedRanking.slice(0, 12).map((entry, i) => (
@@ -1258,12 +1472,20 @@ const StudentsPage = () => {
   const th = theme[darkMode ? "dark" : "light"];
   const [search, setSearch] = useState("");
   const [filterRisk, setFilterRisk] = useState("All");
+  const [filterClass, setFilterClass] = useState("All");
   const [selected, setSelected] = useState(null);
+  const classOptions = ["All", ...new Set(studentsData.map((item) => String(item.class || "Class NA")))];
+  const categorySummary = studentsData.reduce((acc, item) => {
+    const key = String(item.category || deriveStudentCategory(item));
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   const filtered = studentsData.filter(s => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.id.includes(search);
     const matchRisk = filterRisk === "All" || s.riskScore === filterRisk;
-    return matchSearch && matchRisk;
+    const matchClass = filterClass === "All" || s.class === filterClass;
+    return matchSearch && matchRisk && matchClass;
   });
 
   if (selected) return <StudentProfile student={selected} onBack={() => setSelected(null)} />;
@@ -1281,9 +1503,27 @@ const StudentsPage = () => {
             {r === "All" ? "All Students" : `${r} Risk`}
           </button>
         ))}
+        <select
+          value={filterClass}
+          onChange={(e) => setFilterClass(e.target.value)}
+          style={{ padding: "8px 12px", borderRadius: "8px", border: `1px solid ${th.cardBorder}`, background: th.card, color: th.text, fontWeight: 600, fontSize: "12px", cursor: "pointer" }}
+        >
+          {classOptions.map((className) => (
+            <option key={className} value={className}>{className === "All" ? "All Classes" : className}</option>
+          ))}
+        </select>
         <div style={{ padding: "6px 12px", background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "8px", color: th.textMuted, fontSize: "12px", display: "flex", alignItems: "center" }}>
           {filtered.length} students
         </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px", marginBottom: "16px" }}>
+        {["Critical", "At Risk", "Watchlist", "Stable"].map((key) => (
+          <div key={key} style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px 12px" }}>
+            <p style={{ color: th.textMuted, fontSize: "11px" }}>{key}</p>
+            <p style={{ color: th.text, fontSize: "17px", fontWeight: 700 }}>{Number(categorySummary[key] || 0)}</p>
+          </div>
+        ))}
       </div>
 
       {/* Table */}
@@ -1292,7 +1532,7 @@ const StudentsPage = () => {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
             <thead>
               <tr style={{ background: darkMode ? "#0f172a" : "#f8fafc" }}>
-                {["ID", "Name", "Class", "Blood", "BMI", "Condition", "Risk", "Schemes", "Action"].map(h => (
+                {["ID", "Name", "Class", "Category", "Blood", "BMI", "Condition", "Risk", "Schemes", "Action"].map(h => (
                   <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: th.textMuted, fontWeight: 600, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${th.cardBorder}` }}>{h}</th>
                 ))}
               </tr>
@@ -1313,6 +1553,9 @@ const StudentsPage = () => {
                     </div>
                   </td>
                   <td style={{ padding: "12px 16px", color: th.text }}>{s.class}-{s.section}</td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <Badge color={s.category === "Critical" ? "red" : s.category === "At Risk" ? "orange" : s.category === "Watchlist" ? "yellow" : "green"}>{s.category || deriveStudentCategory(s)}</Badge>
+                  </td>
                   <td style={{ padding: "12px 16px" }}><Badge color="blue">{s.bloodGroup}</Badge></td>
                   <td style={{ padding: "12px 16px", color: s.bmi > 25 ? "#ef4444" : s.bmi < 16 ? "#f59e0b" : "#16a34a", fontWeight: 600 }}>{s.bmi}</td>
                   <td style={{ padding: "12px 16px", color: th.textMuted }}>{s.condition}</td>
@@ -2117,6 +2360,14 @@ export default function SwasthyaSetu() {
   const loadBackendData = useCallback(
     async (authToken, userProfile) => {
       try {
+        if (userProfile?.backendRole === "PARENT") {
+          const myChild = await apiRequest("/students/my-child", { token: authToken }).catch(() => null);
+          if (myChild) {
+            setStudentsData([mapBackendStudent(myChild, 0)]);
+          }
+          return;
+        }
+
         const districtName = userProfile?.district || "Panipat, Haryana";
         const canViewDistrictAnalytics = DISTRICT_ANALYTICS_ROLES.has(userProfile?.backendRole || "");
         const canViewDistrictComparison = DISTRICT_COMPARISON_ROLES.has(userProfile?.backendRole || "");
@@ -2126,13 +2377,6 @@ export default function SwasthyaSetu() {
           const topRisk = await apiRequest(`/district/${encodeURIComponent(districtName)}/top-risk-schools`, { token: authToken });
           if (hasItems(topRisk)) {
             schoolId = topRisk[0].schoolId;
-            setDistrictRanking(
-              topRisk.map((item, index) => ({
-                school: item.schoolName,
-                score: Math.max(45, Math.min(98, Math.round((1 - Number(item.avgRisk || 0)) * 100))),
-                rank: index + 1,
-              }))
-            );
           }
         }
 
@@ -2193,10 +2437,7 @@ export default function SwasthyaSetu() {
             setDistrictRanking(
               districtComparison.map((entry, idx) => ({
                 school: entry.schoolName || `School ${String(entry.schoolId).slice(0, 6).toUpperCase()}`,
-                score: Math.max(
-                  45,
-                  Math.min(98, Math.round(Number(entry.compositeScore ?? (1 - Number(entry.avgRisk || 0)) * 100)))
-                ),
+                score: Number(Number(entry.compositeScore ?? (1 - Number(entry.avgRisk || 0)) * 100).toFixed(1)),
                 rank: Number(entry.rank || idx + 1),
               }))
             );
