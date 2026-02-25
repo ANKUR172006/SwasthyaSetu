@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma";
 import { ApiError } from "../utils/apiError";
 import { calculateRisk } from "../ai-service-client/riskClient";
 import { invalidateSchoolCache } from "./schoolService";
+import { mapRiskToActions, RiskLevel } from "./riskActionEngine";
 
 const bmi = (heightCm: number, weightKg: number): number => {
   const heightM = heightCm / 100;
@@ -43,15 +44,28 @@ const buildReasonCodes = (student: {
   return reasons;
 };
 
+const scoreToRiskLevel = (score: number): RiskLevel => {
+  if (score >= 0.7) return "HIGH";
+  if (score >= 0.4) return "MEDIUM";
+  return "LOW";
+};
+
 const withRiskExplanation = <T extends { bmi: number; vaccinationStatus: string; attendanceRatio: number; riskScore: number }>(
   student: T
-) => ({
-  ...student,
-  riskExplanation: {
-    model_version: "risk-explain-v1",
-    reason_codes: buildReasonCodes(student)
-  }
-});
+) => {
+  const reasonCodes = buildReasonCodes(student);
+  return {
+    ...student,
+    riskExplanation: {
+      model_version: "risk-explain-v1",
+      reason_codes: reasonCodes,
+      recommended_actions: mapRiskToActions({
+        riskLevel: scoreToRiskLevel(student.riskScore),
+        reasonCodes
+      })
+    }
+  };
+};
 
 export const createStudent = async (payload: {
   schoolId: string;

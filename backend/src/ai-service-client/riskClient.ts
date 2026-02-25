@@ -2,6 +2,7 @@ import axios from "axios";
 import { env } from "../config/env";
 import { logger } from "../config/logger";
 import { recordRiskSource } from "../services/riskTelemetry";
+import { mapRiskToActions } from "../services/riskActionEngine";
 
 export interface RiskInput {
   bmi: number;
@@ -16,6 +17,7 @@ export interface RiskResponse {
   level: "LOW" | "MEDIUM" | "HIGH";
   model_version: string;
   reason_codes: string[];
+  recommended_actions: ReturnType<typeof mapRiskToActions>;
   contributions: {
     bmi: number;
     vaccination: number;
@@ -98,12 +100,18 @@ const fallbackRiskScore = (payload: RiskInput): RiskResponse => {
   const score = Number(
     Math.max(0, Math.min(1, contributions.bmi + contributions.vaccination + contributions.temperature + contributions.aqi + contributions.attendance)).toFixed(4)
   );
+  const reasonCodes = buildReasonCodes(contributions);
+  const level = scoreLevel(score);
 
   return {
     score,
-    level: scoreLevel(score),
+    level,
     model_version: "risk-engine-fallback-v1",
-    reason_codes: buildReasonCodes(contributions),
+    reason_codes: reasonCodes,
+    recommended_actions: mapRiskToActions({
+      riskLevel: level,
+      reasonCodes
+    }),
     contributions,
     source: "fallback"
   };
@@ -120,6 +128,12 @@ export const calculateRisk = async (payload: RiskInput): Promise<RiskResponse> =
       level: data.level,
       model_version: data.model_version ?? "risk-engine-rule-v2",
       reason_codes: data.reason_codes ?? [],
+      recommended_actions:
+        data.recommended_actions ??
+        mapRiskToActions({
+          riskLevel: data.level,
+          reasonCodes: data.reason_codes ?? []
+        }),
       contributions: data.contributions ?? {
         bmi: 0,
         vaccination: 0,

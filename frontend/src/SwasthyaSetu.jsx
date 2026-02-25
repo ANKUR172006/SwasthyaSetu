@@ -371,6 +371,12 @@ const students = generateStudents();
 
 const mapBackendStudent = (student, idx = 0) => {
   const riskScore = riskLabelFromScore(Number(student.riskScore ?? 0));
+  const recommendedActions = Array.isArray(student?.riskExplanation?.recommended_actions)
+    ? student.riskExplanation.recommended_actions
+    : [];
+  const reasonCodes = Array.isArray(student?.riskExplanation?.reason_codes)
+    ? student.riskExplanation.reason_codes
+    : [];
   return {
     id: student.id,
     name: `Student ${student.id.slice(0, 6).toUpperCase()}`,
@@ -393,6 +399,8 @@ const mapBackendStudent = (student, idx = 0) => {
     parentPhone: `98${String(10000000 + idx * 137).slice(0, 8)}`,
     address: "Ward-level school catchment, India",
     photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`,
+    recommendedActions,
+    reasonCodes
   };
 };
 
@@ -1335,8 +1343,13 @@ const StudentsPage = () => {
 // ============================================================
 
 const StudentProfile = ({ student: s, onBack }) => {
-  const { darkMode, generateReport } = useApp();
+  const { darkMode, generateReport, sendSMS } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const actionLabel = {
+    nutrition: "Nutrition Counseling",
+    health_camp: "Health Camp Referral",
+    parent_counseling: "Parent Counseling"
+  };
 
   const growthData = Array.from({ length: 6 }, (_, i) => ({
     month: ["Aug", "Sep", "Oct", "Nov", "Dec", "Jan"][i],
@@ -1476,6 +1489,39 @@ const StudentProfile = ({ student: s, onBack }) => {
           </div>
         </Card>
       </div>
+
+      {/* Recommended Actions */}
+      <Card title="Recommended Actions by Risk Type">
+        {Array.isArray(s.recommendedActions) && s.recommendedActions.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
+            {s.recommendedActions.map((action, index) => (
+              <div key={`${action.type}-${index}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{actionLabel[action.type] || action.type}</p>
+                  <Badge color={action.priority === "high" ? "red" : action.priority === "medium" ? "yellow" : "green"}>
+                    {String(action.priority || "low").toUpperCase()}
+                  </Badge>
+                </div>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>{action.title}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>{action.recommendation}</p>
+                <div style={{ marginBottom: "8px" }}>
+                  {(action.tasks || []).slice(0, 3).map((task, taskIdx) => (
+                    <p key={taskIdx} style={{ color: th.text, fontSize: "11px", marginBottom: "3px" }}>• {task}</p>
+                  ))}
+                </div>
+                <button
+                  onClick={() => sendSMS(s.parentPhone, action.parentScript || "Please contact school health desk for follow-up.")}
+                  style={{ width: "100%", padding: "6px", background: th.accentLight, color: th.accent, border: `1px solid ${th.cardBorder}`, borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}
+                >
+                  Send Parent Counseling SMS
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ color: th.textMuted, fontSize: "12px" }}>No recommendation data available yet for this student profile.</p>
+        )}
+      </Card>
 
       {/* Download Report */}
       <Card title="Download Health Report">
