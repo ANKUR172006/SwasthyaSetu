@@ -435,6 +435,7 @@ const schemeData = [
   { scheme: "RBSK", eligible: 98, covered: 72, missing: 26 },
   { scheme: "Ayushman", eligible: 85, covered: 61, missing: 24 },
   { scheme: "PM Poshan", eligible: 120, covered: 115, missing: 5 },
+  { scheme: "Jan Aushadhi", eligible: 100, covered: 64, missing: 36 },
 ];
 
 const districtData = [
@@ -1636,6 +1637,7 @@ const SchemesPage = () => {
     { name: "Midday Meal Scheme (PM POSHAN)", icon: "🍱", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
     { name: "Rashtriya Bal Swasthya Karyakram", icon: "🏥", color: "#3b82f6", eligible: 98, covered: 72, missing: 26, missingDocs: ["Birth Certificate", "Health Card"] },
     { name: "Ayushman Bharat (PM-JAY)", icon: "💊", color: "#7c3aed", eligible: 85, covered: 61, missing: 24, missingDocs: ["BPL Certificate", "Ration Card"] },
+    { name: "Pradhan Mantri Bhartiya Janaushadhi Pariyojana", icon: "💉", color: "#0ea5a4", eligible: 100, covered: 64, missing: 36, missingDocs: ["Aadhaar Card", "Mobile Number"] },
     { name: "National Scholarship Portal", icon: "📚", color: "#16a34a", eligible: 45, covered: 38, missing: 7, missingDocs: ["Bank Account", "Mark Sheet"] },
   ];
 
@@ -2111,6 +2113,7 @@ export default function SwasthyaSetu() {
               { scheme: "RBSK", eligible: total, covered: Number(schemeRes.rbsrFlagCount || 0), missing: Math.max(total - Number(schemeRes.rbsrFlagCount || 0), 0) },
               { scheme: "Ayushman", eligible: total, covered: Number(schemeRes.ayushmanEligibleCount || 0), missing: Math.max(total - Number(schemeRes.ayushmanEligibleCount || 0), 0) },
               { scheme: "PM Poshan", eligible: total, covered: Math.round(total * 0.96), missing: Math.round(total * 0.04) },
+              { scheme: "Jan Aushadhi", eligible: total, covered: Math.round(total * 0.64), missing: Math.round(total * 0.36) },
             ]);
           }
 
