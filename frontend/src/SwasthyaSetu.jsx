@@ -124,9 +124,12 @@ const UI_ROLE_TO_DEFAULT_NAME = {
 const API_TIMEOUT_MS = 8000;
 const API_WARMUP_TIMEOUT_MS = 35000;
 const API_MAX_RETRIES = 3;
+const API_COLD_START_MAX_WAIT_MS = 90000;
+const API_COLD_START_POLL_MS = 2500;
 const runtimePersistSession = String(runtimeConfig.PERSIST_SESSION || "").toLowerCase();
 const PERSIST_SESSION = (runtimePersistSession ? runtimePersistSession === "true" : String(import.meta.env.VITE_PERSIST_SESSION || "false").toLowerCase() === "true");
 let lastClientErrorAt = 0;
+let warmupPromise = null;
 
 const emitClientError = (errorPayload) => {
   const now = Date.now();
@@ -153,6 +156,13 @@ const emitClientError = (errorPayload) => {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getApiCandidates = () => [...new Set([API_BASE_URL, ...PROD_BACKEND_CANDIDATES].filter(Boolean))];
+
+const isTransientApiError = (error) => {
+  const status = Number(error?.status || 0);
+  return error?.name === "AbortError" || status === 0 || status === 429 || status >= 500;
+};
 
 const requestJson = async (baseUrl, path, { method = "GET", body, token, timeoutMs = API_TIMEOUT_MS } = {}) => {
   const controller = new AbortController();
@@ -197,7 +207,7 @@ const apiRequest = async (path, options = {}) => {
     throw new Error(API_CONFIG_ERROR);
   }
 
-  const candidates = [...new Set([API_BASE_URL, ...PROD_BACKEND_CANDIDATES].filter(Boolean))];
+  const candidates = getApiCandidates();
   const errors = [];
   for (const baseUrl of candidates) {
     for (let attempt = 1; attempt <= API_MAX_RETRIES; attempt += 1) {
@@ -246,6 +256,51 @@ const apiRequest = async (path, options = {}) => {
   }
   emitClientError({ message: "api_unreachable", details: { path } });
   throw new Error("Unable to reach backend API. Please check deployment and CORS settings.");
+};
+
+const pingWarmupOnce = async () => {
+  const candidates = getApiCandidates();
+  let lastError = new Error("Unable to reach backend API. Please check deployment and CORS settings.");
+  for (const baseUrl of candidates) {
+    try {
+      return await requestJson(baseUrl, "/warmup", { timeoutMs: 12000 });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+};
+
+const ensureBackendAwake = async ({ force = false } = {}) => {
+  if (API_CONFIG_ERROR) {
+    throw new Error(API_CONFIG_ERROR);
+  }
+  if (warmupPromise && !force) {
+    return warmupPromise;
+  }
+  warmupPromise = (async () => {
+    const deadline = Date.now() + API_COLD_START_MAX_WAIT_MS;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      try {
+        await pingWarmupOnce();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!isTransientApiError(error)) {
+          throw error;
+        }
+        await sleep(API_COLD_START_POLL_MS);
+      }
+    }
+    throw lastError || new Error("Backend is waking up. Please try again in a moment.");
+  })();
+
+  try {
+    await warmupPromise;
+  } finally {
+    warmupPromise = null;
+  }
 };
 
 const riskLabelFromScore = (score) => {
@@ -2121,41 +2176,58 @@ export default function SwasthyaSetu() {
 
   const login = useCallback(
     async (selectedRole, email, password) => {
-      let auth;
-      try {
-        auth = await apiRequest("/auth/login", {
-          method: "POST",
-          body: { email, password },
-        });
-      } catch (error) {
-        const message = String(error?.message || "");
-        const invalidCredentials = /invalid credentials/i.test(message);
-        if (!invalidCredentials) {
-          throw error;
-        }
-
-        const backendRole = UI_ROLE_TO_BACKEND_ROLE[selectedRole] || "SCHOOL_ADMIN";
-        const name = UI_ROLE_TO_DEFAULT_NAME[selectedRole] || "SwasthyaSetu User";
+      const authFlow = async () => {
         try {
-          auth = await apiRequest("/auth/register", {
-            method: "POST",
-            body: {
-              name,
-              email,
-              password,
-              role: backendRole,
-            },
-          });
-        } catch (registerError) {
-          const registerMessage = String(registerError?.message || "");
-          const alreadyRegistered = /already registered|already exists|409/i.test(registerMessage);
-          if (!alreadyRegistered) {
-            throw registerError;
-          }
-          auth = await apiRequest("/auth/login", {
+          return await apiRequest("/auth/login", {
             method: "POST",
             body: { email, password },
           });
+        } catch (error) {
+          const message = String(error?.message || "");
+          const invalidCredentials = /invalid credentials/i.test(message);
+          if (!invalidCredentials) {
+            throw error;
+          }
+
+          const backendRole = UI_ROLE_TO_BACKEND_ROLE[selectedRole] || "SCHOOL_ADMIN";
+          const name = UI_ROLE_TO_DEFAULT_NAME[selectedRole] || "SwasthyaSetu User";
+          try {
+            return await apiRequest("/auth/register", {
+              method: "POST",
+              body: {
+                name,
+                email,
+                password,
+                role: backendRole,
+              },
+            });
+          } catch (registerError) {
+            const registerMessage = String(registerError?.message || "");
+            const alreadyRegistered = /already registered|already exists|409/i.test(registerMessage);
+            if (!alreadyRegistered) {
+              throw registerError;
+            }
+            return apiRequest("/auth/login", {
+              method: "POST",
+              body: { email, password },
+            });
+          }
+        }
+      };
+
+      await ensureBackendAwake();
+      let auth;
+      try {
+        auth = await authFlow();
+      } catch (error) {
+        if (!isTransientApiError(error)) {
+          throw error;
+        }
+        await ensureBackendAwake({ force: true });
+        try {
+          auth = await authFlow();
+        } catch (retryError) {
+          throw retryError;
         }
       }
       const accessToken = auth?.accessToken || "";
@@ -2287,7 +2359,7 @@ export default function SwasthyaSetu() {
   }, []);
 
   useEffect(() => {
-    void apiRequest("/warmup").catch(() => {});
+    void ensureBackendAwake().catch(() => {});
   }, []);
 
   useEffect(() => {
