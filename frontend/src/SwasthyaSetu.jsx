@@ -2390,8 +2390,13 @@ const ClimatePage = () => {
 // ============================================================
 
 const AlertsPage = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport, operationalEvents = [], logOperationalEvent } = useApp();
+  const { user, darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport, operationalEvents = [], logOperationalEvent } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const role = user?.role || ROLES.SCHOOL_ADMIN;
+  const isParentView = role === ROLES.PARENT;
+  const canManageSignals = [ROLES.TEACHER, ROLES.SCHOOL_ADMIN, ROLES.SUPER_ADMIN, ROLES.HEALTH_WORKER].includes(role);
+  const canRunCommand = [ROLES.SCHOOL_ADMIN, ROLES.SUPER_ADMIN, ROLES.HEALTH_WORKER].includes(role);
+  const canViewOps = [ROLES.SCHOOL_ADMIN, ROLES.SUPER_ADMIN, ROLES.HEALTH_WORKER].includes(role);
   const highRisk = studentsData.filter(s => s.riskScore === "High");
   const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
   const attendanceSignals = outbreakSignals.attendanceSignals;
@@ -2419,6 +2424,8 @@ const AlertsPage = () => {
     .filter(([, count]) => Number(count) >= 3)
     .map(([className]) => className);
   const probableDengueStudents = studentsData.filter((student) => probableDengueClasses.includes(String(student?.class || "")));
+  const myChild = isParentView ? studentsData[0] : null;
+  const parentClassAlert = isParentView && myChild ? probableDengueClasses.includes(String(myChild.class || "")) : false;
   const outbreakTrend = buildOutbreakTrendSeries(sickLeaveReports, 10);
   const sickLeaveCandidates = studentsData
     .filter((student) => Number(student?.attendance || 0) < 90)
@@ -2472,19 +2479,23 @@ const AlertsPage = () => {
         <AlertTriangle size={32} color="#fff" />
         <div>
           <p style={{ color: "#fff", fontWeight: 800, fontSize: "18px" }}>🚨 Emergency Health Alerts</p>
-          <p style={{ color: "#fecaca", fontSize: "13px" }}>{highRisk.length} students require immediate attention</p>
+          <p style={{ color: "#fecaca", fontSize: "13px" }}>
+            {isParentView ? "Child safety and class spread alerts" : `${highRisk.length} students require immediate attention`}
+          </p>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
-          <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-            📞 Notify All Parents
-          </button>
-          <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, attendanceSignals, symptomClusters, likelyDiseaseFamily: outbreakSignals.likelyDiseaseFamily, spreadRisk: outbreakSignals.spreadLevel, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-            📋 Generate Report
-          </button>
-        </div>
+        {!isParentView && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+            <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
+              📞 Notify All Parents
+            </button>
+            <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, attendanceSignals, symptomClusters, likelyDiseaseFamily: outbreakSignals.likelyDiseaseFamily, spreadRisk: outbreakSignals.spreadLevel, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
+              📋 Generate Report
+            </button>
+          </div>
+        )}
       </div>
 
-      {probableDengueClasses.length > 0 && (
+      {(probableDengueClasses.length > 0 || parentClassAlert) && (
         <Card title="Probable Dengue Cluster Alert (2-Day Rise)">
           <div style={{ background: darkMode ? "#3f1d1d" : "#fff1f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px", marginBottom: "10px" }}>
             <p style={{ color: th.text, fontSize: "13px", fontWeight: 700 }}>
@@ -2494,7 +2505,7 @@ const AlertsPage = () => {
               This is an early warning (not medical diagnosis). Advise parents for immediate doctor consultation and hydration/safety protocol.
             </p>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {!isParentView && <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {probableDengueStudents.slice(0, 12).map((student) => (
               <div key={`dengue-${student.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
                 <div>
@@ -2514,7 +2525,16 @@ const AlertsPage = () => {
                 </button>
               </div>
             ))}
-          </div>
+          </div>}
+          {isParentView && myChild && (
+            <div style={{ padding: "8px 10px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{myChild.name} ({myChild.class})</p>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>Precautionary class alert active. Monitor fever/vomiting/headache and consult doctor if symptoms persist.</p>
+              <button onClick={() => callParent("108", "Emergency Helpline")} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}>
+                Call Health Helpline
+              </button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -2537,7 +2557,7 @@ const AlertsPage = () => {
         </div>
       </div>
 
-      <Card title="Attendance Early Warning">
+      {!isParentView && <Card title="Attendance Early Warning">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <div>
             <p style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginBottom: "8px" }}>High-Risk Attendance Students</p>
@@ -2570,9 +2590,9 @@ const AlertsPage = () => {
             )}
           </div>
         </div>
-      </Card>
+      </Card>}
 
-      <div style={{ marginTop: "12px", marginBottom: "12px" }}>
+      {canRunCommand && <div style={{ marginTop: "12px", marginBottom: "12px" }}>
         <Card title="Response Command Checklist">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "8px" }}>
             {[
@@ -2609,9 +2629,9 @@ const AlertsPage = () => {
             ))}
           </div>
         </Card>
-      </div>
+      </div>}
 
-      <div style={{ marginTop: "12px", marginBottom: "12px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+      {canManageSignals && <div style={{ marginTop: "12px", marginBottom: "12px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
         <Card title="Sick Leave Symptom Intake">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
             <select value={leaveForm.studentId} onChange={(e) => setLeaveForm((prev) => ({ ...prev, studentId: e.target.value }))} style={{ padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }}>
@@ -2646,7 +2666,7 @@ const AlertsPage = () => {
             <p style={{ color: th.textMuted, fontSize: "12px" }}>No symptom cluster detected yet. Log sick leaves with symptoms to activate this signal.</p>
           )}
         </Card>
-      </div>
+      </div>}
 
       <div style={{ marginBottom: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
         <Card title="Outbreak Signal Trend (Last 10 Days)">
@@ -2663,7 +2683,7 @@ const AlertsPage = () => {
           </ResponsiveContainer>
         </Card>
 
-        <Card title="Operational Event Log">
+        {canViewOps && <Card title="Operational Event Log">
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "210px", overflow: "auto" }}>
             {operationalEvents.slice(0, 10).map((event) => (
               <div key={event.id} style={{ padding: "8px", borderRadius: "8px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#f8fafc" }}>
@@ -2676,10 +2696,10 @@ const AlertsPage = () => {
               <p style={{ color: th.textMuted, fontSize: "12px" }}>No operations logged yet.</p>
             )}
           </div>
-        </Card>
+        </Card>}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {!isParentView && <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         {highRisk.map(s => (
           <div key={s.id} style={{ background: th.card, border: "2px solid #ef4444", borderRadius: "12px", padding: "16px 20px", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
             <div style={{ width: "48px", height: "48px", background: "#fee2e2", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: 800, color: "#dc2626", flexShrink: 0 }}>
@@ -2708,7 +2728,7 @@ const AlertsPage = () => {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 };
