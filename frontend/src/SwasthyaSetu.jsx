@@ -506,6 +506,22 @@ const buildOutbreakSignals = (studentsData, sickLeaveReports) => {
   };
 };
 
+const buildOutbreakTrendSeries = (reports, days = 10) => {
+  const source = Array.isArray(reports) ? reports : [];
+  return Array.from({ length: days }, (_, idx) => {
+    const offset = days - idx - 1;
+    const day = new Date(Date.now() - offset * 24 * 60 * 60 * 1000);
+    const key = day.toISOString().slice(0, 10);
+    const dayReports = source.filter((item) => String(item?.date || item?.reportedAt || "").slice(0, 10) === key);
+    const symptomCount = dayReports.reduce((acc, entry) => acc + parseSymptomList(entry?.symptoms).length, 0);
+    return {
+      day: day.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+      sickLeaves: dayReports.length,
+      symptoms: symptomCount
+    };
+  });
+};
+
 const toDisplaySchoolLabel = (name) => {
   const normalized = String(name || "Unknown School").trim();
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
@@ -2374,7 +2390,7 @@ const ClimatePage = () => {
 // ============================================================
 
 const AlertsPage = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport, operationalEvents = [], logOperationalEvent } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
   const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
@@ -2403,6 +2419,7 @@ const AlertsPage = () => {
     .filter(([, count]) => Number(count) >= 3)
     .map(([className]) => className);
   const probableDengueStudents = studentsData.filter((student) => probableDengueClasses.includes(String(student?.class || "")));
+  const outbreakTrend = buildOutbreakTrendSeries(sickLeaveReports, 10);
   const sickLeaveCandidates = studentsData
     .filter((student) => Number(student?.attendance || 0) < 90)
     .slice(0, 30);
@@ -2415,6 +2432,12 @@ const AlertsPage = () => {
   });
 
   const selectedStudent = studentsData.find((student) => student.id === leaveForm.studentId) || sickLeaveCandidates[0];
+  const [responseChecklist, setResponseChecklist] = useState({
+    triage: false,
+    parentNotification: false,
+    fieldInspection: false,
+    campSchedule: false
+  });
 
   const submitLeaveSignal = () => {
     if (!leaveForm.studentId || !selectedStudent) return;
@@ -2430,6 +2453,12 @@ const AlertsPage = () => {
       reportedAt: new Date().toISOString()
     };
     logSickLeaveReport?.(payload);
+    logOperationalEvent?.({
+      type: "SICK_LEAVE_SIGNAL",
+      severity: "medium",
+      title: `Sick leave logged for ${selectedStudent.name}`,
+      details: `${selectedStudent.class} | symptoms: ${payload.symptoms || "not specified"}`
+    });
     setLeaveForm((prev) => ({
       ...prev,
       reason: "",
@@ -2543,6 +2572,45 @@ const AlertsPage = () => {
         </div>
       </Card>
 
+      <div style={{ marginTop: "12px", marginBottom: "12px" }}>
+        <Card title="Response Command Checklist">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "8px" }}>
+            {[
+              { key: "triage", label: "Triage cases within 2 hours" },
+              { key: "parentNotification", label: "Notify parents for affected classes" },
+              { key: "fieldInspection", label: "Request sanitation/vector inspection" },
+              { key: "campSchedule", label: "Schedule focused health camp in 48h" }
+            ].map((item) => (
+              <button
+                key={item.key}
+                onClick={() => {
+                  setResponseChecklist((prev) => ({ ...prev, [item.key]: !prev[item.key] }));
+                  logOperationalEvent?.({
+                    type: "RESPONSE_STEP_UPDATE",
+                    severity: "info",
+                    title: `${item.label} ${responseChecklist[item.key] ? "reopened" : "completed"}`,
+                    details: `Spread risk ${outbreakSignals.spreadLevel}`
+                  });
+                }}
+                style={{
+                  textAlign: "left",
+                  padding: "10px",
+                  borderRadius: "8px",
+                  border: `1px solid ${th.cardBorder}`,
+                  background: responseChecklist[item.key] ? "#dcfce7" : (darkMode ? "#0f172a" : "#f8fafc"),
+                  color: th.text,
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: 600
+                }}
+              >
+                {responseChecklist[item.key] ? "✓" : "○"} {item.label}
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
+
       <div style={{ marginTop: "12px", marginBottom: "12px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
         <Card title="Sick Leave Symptom Intake">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
@@ -2577,6 +2645,37 @@ const AlertsPage = () => {
           {symptomClusters.length === 0 && (
             <p style={{ color: th.textMuted, fontSize: "12px" }}>No symptom cluster detected yet. Log sick leaves with symptoms to activate this signal.</p>
           )}
+        </Card>
+      </div>
+
+      <div style={{ marginBottom: "12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <Card title="Outbreak Signal Trend (Last 10 Days)">
+          <ResponsiveContainer width="100%" height={210}>
+            <BarChart data={outbreakTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: th.textMuted }} />
+              <YAxis tick={{ fontSize: 11, fill: th.textMuted }} />
+              <Tooltip contentStyle={{ background: th.card, borderRadius: "8px" }} />
+              <Legend />
+              <Bar dataKey="sickLeaves" name="Sick Leaves" fill="#dc2626" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="symptoms" name="Symptom Reports" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card title="Operational Event Log">
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "210px", overflow: "auto" }}>
+            {operationalEvents.slice(0, 10).map((event) => (
+              <div key={event.id} style={{ padding: "8px", borderRadius: "8px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#f8fafc" }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{event.title}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>{event.details}</p>
+                <p style={{ color: th.textMuted, fontSize: "10px" }}>{new Date(event.createdAt).toLocaleString("en-IN")}</p>
+              </div>
+            ))}
+            {operationalEvents.length === 0 && (
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>No operations logged yet.</p>
+            )}
+          </div>
         </Card>
       </div>
 
@@ -2843,6 +2942,7 @@ export default function SwasthyaSetu() {
   const [climateMetrics, setClimateMetrics] = useState(climateData);
   const [genAiSchoolSummary, setGenAiSchoolSummary] = useState("");
   const [sickLeaveReports, setSickLeaveReports] = useState([]);
+  const [operationalEvents, setOperationalEvents] = useState([]);
 
   const refreshGenAiSchoolSummary = useCallback(async () => {
     if (!token || !user?.schoolId) return;
@@ -3158,6 +3258,11 @@ export default function SwasthyaSetu() {
     setSickLeaveReports((prev) => [report, ...prev].slice(0, 300));
   }, []);
 
+  const logOperationalEvent = useCallback((event) => {
+    if (!event) return;
+    setOperationalEvents((prev) => [{ id: `${Date.now()}-${Math.random()}`, createdAt: new Date().toISOString(), ...event }, ...prev].slice(0, 500));
+  }, []);
+
   useEffect(() => {
     void ensureBackendAwake().catch(() => {});
   }, []);
@@ -3211,7 +3316,9 @@ export default function SwasthyaSetu() {
         districtClimateRisk,
         climateMetrics,
         sickLeaveReports,
+        operationalEvents,
         logSickLeaveReport,
+        logOperationalEvent,
         genAiSchoolSummary,
         refreshGenAiSchoolSummary,
         createHealthCamp,
