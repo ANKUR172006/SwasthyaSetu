@@ -1,5 +1,14 @@
 import bcrypt from "bcryptjs";
-import { PrismaClient, SchoolType, UserRole } from "@prisma/client";
+import {
+  DistrictAlertStatus,
+  DistrictAlertType,
+  DistrictReportType,
+  DistrictResourceActionType,
+  DistrictResourceStatus,
+  PrismaClient,
+  SchoolType,
+  UserRole
+} from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -10,6 +19,13 @@ const buildBmi = (heightCm: number, weightKg: number): number => {
 
 async function main() {
   await prisma.auditLog.deleteMany();
+  await prisma.districtReportSnapshot.deleteMany();
+  await prisma.districtForecastMonthly.deleteMany();
+  await prisma.districtResourceRecommendation.deleteMany();
+  await prisma.districtAttendanceSignalDaily.deleteMany();
+  await prisma.districtEnvironmentalAlert.deleteMany();
+  await prisma.districtFieldReport.deleteMany();
+  await prisma.schoolGeoProfile.deleteMany();
   await prisma.healthCamp.deleteMany();
   await prisma.schemeEligibility.deleteMany();
   await prisma.student.deleteMany();
@@ -82,6 +98,31 @@ async function main() {
     const created = await prisma.school.create({ data: school });
     schools.push(created);
   }
+
+  const geoSeed = [
+    { lat: 29.3909, lon: 76.9635, block: "Karhans Block", ward: "Ward-01" },
+    { lat: 29.3918, lon: 76.9821, block: "Panipat City Block", ward: "Ward-03" },
+    { lat: 28.6519, lon: 77.1909, block: "Karol Bagh Block", ward: "Ward-12" },
+    { lat: 12.9279, lon: 77.5834, block: "Jayanagar Block", ward: "Ward-07" },
+    { lat: 23.0362, lon: 72.5492, block: "Navrangpura Block", ward: "Ward-05" },
+    { lat: 22.5758, lon: 88.4326, block: "Salt Lake Block", ward: "Ward-09" },
+    { lat: 26.8581, lon: 80.9422, block: "Lucknow Central Block", ward: "Ward-04" },
+    { lat: 13.0418, lon: 80.2341, block: "T Nagar Block", ward: "Ward-02" }
+  ];
+
+  await Promise.all(
+    schools.map((school, index) =>
+      prisma.schoolGeoProfile.create({
+        data: {
+          schoolId: school.id,
+          latitude: geoSeed[index]?.lat ?? 28 + index,
+          longitude: geoSeed[index]?.lon ?? 77 + index * 0.2,
+          blockName: geoSeed[index]?.block ?? `Block-${index + 1}`,
+          wardName: geoSeed[index]?.ward ?? `Ward-${index + 1}`
+        }
+      })
+    )
+  );
 
   const adminPasswordHash = await bcrypt.hash("Admin@1234", 12);
 
@@ -239,6 +280,126 @@ async function main() {
       }
     })
   ]);
+
+  const districtFieldReports = [
+    { district: "Panipat, Haryana", blockName: "Karhans Block", reportType: DistrictReportType.WATER, severity: 7, sourceRole: UserRole.DISTRICT_ADMIN },
+    { district: "Panipat, Haryana", blockName: "Panipat City Block", reportType: DistrictReportType.VECTOR, severity: 8, sourceRole: UserRole.DISTRICT_ADMIN },
+    { district: "Panipat, Haryana", blockName: "Panipat City Block", reportType: DistrictReportType.HEAT, severity: 6, sourceRole: UserRole.SCHOOL_ADMIN },
+    { district: "Delhi, Delhi", blockName: "Karol Bagh Block", reportType: DistrictReportType.AIR, severity: 9, sourceRole: UserRole.DISTRICT_ADMIN },
+    { district: "Ahmedabad, Gujarat", blockName: "Navrangpura Block", reportType: DistrictReportType.SANITATION, severity: 5, sourceRole: UserRole.SCHOOL_ADMIN },
+    { district: "Chennai, Tamil Nadu", blockName: "T Nagar Block", reportType: DistrictReportType.HEAT, severity: 7, sourceRole: UserRole.DISTRICT_ADMIN }
+  ];
+
+  await prisma.districtFieldReport.createMany({
+    data: districtFieldReports.map((item, index) => ({
+      ...item,
+      reportedAt: new Date(Date.now() - index * 8 * 60 * 60 * 1000)
+    }))
+  });
+
+  await prisma.districtEnvironmentalAlert.createMany({
+    data: [
+      {
+        district: "Panipat, Haryana",
+        alertType: DistrictAlertType.HEAT,
+        severity: 8,
+        startsAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+        endsAt: new Date(Date.now() + 42 * 60 * 60 * 1000),
+        status: DistrictAlertStatus.ACTIVE
+      },
+      {
+        district: "Panipat, Haryana",
+        alertType: DistrictAlertType.WATER,
+        severity: 6,
+        startsAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+        endsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        status: DistrictAlertStatus.WATCH
+      },
+      {
+        district: "Delhi, Delhi",
+        alertType: DistrictAlertType.AIR,
+        severity: 9,
+        startsAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        endsAt: new Date(Date.now() + 72 * 60 * 60 * 1000),
+        status: DistrictAlertStatus.ACTIVE
+      }
+    ]
+  });
+
+  const attendanceSignalRows = Array.from({ length: 14 }, (_, dayOffset) => {
+    const date = new Date(Date.now() - dayOffset * 24 * 60 * 60 * 1000);
+    return [
+      {
+        district: "Panipat, Haryana",
+        blockName: "Karhans Block",
+        date,
+        schoolsReporting: 2,
+        attendanceDropPct: 3.5 + dayOffset * 0.1,
+        symptomClusterIndex: 0.2 + dayOffset * 0.01,
+        envRiskDelta: 0.15 + dayOffset * 0.005
+      },
+      {
+        district: "Panipat, Haryana",
+        blockName: "Panipat City Block",
+        date,
+        schoolsReporting: 3,
+        attendanceDropPct: 5.4 + dayOffset * 0.12,
+        symptomClusterIndex: 0.4 + dayOffset * 0.015,
+        envRiskDelta: 0.28 + dayOffset * 0.006
+      }
+    ];
+  }).flat();
+
+  await prisma.districtAttendanceSignalDaily.createMany({
+    data: attendanceSignalRows
+  });
+
+  await prisma.districtResourceRecommendation.createMany({
+    data: [
+      {
+        district: "Panipat, Haryana",
+        blockName: "Panipat City Block",
+        actionType: DistrictResourceActionType.INSPECTION,
+        priorityScore: 82,
+        recommendedDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        status: DistrictResourceStatus.RECOMMENDED,
+        explanation: "Attendance decline and field vector signals indicate need for rapid preventive inspection."
+      },
+      {
+        district: "Panipat, Haryana",
+        blockName: "Karhans Block",
+        actionType: DistrictResourceActionType.WATER_TESTING,
+        priorityScore: 76,
+        recommendedDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+        status: DistrictResourceStatus.RECOMMENDED,
+        explanation: "Recent water-related field reports and moderate risk trend suggest priority water quality checks."
+      },
+      {
+        district: "Panipat, Haryana",
+        blockName: "Panipat City Block",
+        actionType: DistrictResourceActionType.FUMIGATION,
+        priorityScore: 79,
+        recommendedDate: new Date(Date.now()),
+        status: DistrictResourceStatus.SCHEDULED,
+        explanation: "Vector exposure signal has increased over the past week; preventive fumigation is scheduled."
+      }
+    ]
+  });
+
+  await prisma.districtForecastMonthly.createMany({
+    data: Array.from({ length: 6 }, (_, index) => {
+      const month = new Date();
+      month.setUTCMonth(month.getUTCMonth() + index, 1);
+      return {
+        district: "Panipat, Haryana",
+        month,
+        heatRisk: 62 + index * 3,
+        vectorRisk: 48 + index * 2.5,
+        airRisk: 58 + index * 2.2,
+        confidence: Math.max(55, 86 - index * 5)
+      };
+    })
+  });
 
   await prisma.healthCamp.createMany({
     data: [

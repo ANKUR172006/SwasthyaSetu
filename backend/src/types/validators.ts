@@ -56,6 +56,73 @@ export const districtParamSchema = z.object({
   query: z.object({})
 });
 
+export const districtAdminGeoHotspotsSchema = z.object({
+  body: z.object({}),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({
+    windowDays: z.coerce.number().int().min(1).max(90).default(30)
+  })
+});
+
+export const districtAdminOutbreakSchema = z.object({
+  body: z.object({}),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({
+    windowDays: z.coerce.number().int().min(1).max(60).default(14)
+  })
+});
+
+export const districtAdminResourceAllocationSchema = z.object({
+  body: z.object({}),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(50).default(20)
+  })
+});
+
+export const districtAdminSeasonalForecastSchema = z.object({
+  body: z.object({}),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({
+    months: z.coerce.number().int().min(1).max(12).default(6)
+  })
+});
+
+export const districtAdminComplianceGenerateSchema = z.object({
+  body: z.object({}),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({})
+});
+
+export const districtAdminScenarioSimulationSchema = z.object({
+  body: z.object({
+    waterQualityImprovementPct: z.number().min(0).max(40).default(0),
+    wasteManagementImprovementPct: z.number().min(0).max(40).default(0)
+  }),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({})
+});
+
+export const districtAdminComplianceDownloadSchema = z.object({
+  body: z.object({}),
+  params: z.object({
+    name: z.string().min(2),
+    reportId: z.string().uuid()
+  }),
+  query: z.object({
+    format: z.enum(["pdf", "csv"]).default("pdf")
+  })
+});
+
+export const superAdminPolicySimulationSchema = z.object({
+  body: z.object({
+    waterQualityImprovementPct: z.number().min(0).max(40).default(0),
+    treeCoverIncreasePct: z.number().min(0).max(40).default(0)
+  }),
+  params: z.object({ name: z.string().min(2) }),
+  query: z.object({})
+});
+
 export const createStudentSchema = z.object({
   body: z.object({
     schoolId: z.string().uuid(),

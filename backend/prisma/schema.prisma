@@ -20,6 +20,40 @@ enum SchoolType {
   PRIVATE
 }
 
+enum DistrictReportType {
+  WATER
+  VECTOR
+  HEAT
+  AIR
+  SANITATION
+}
+
+enum DistrictAlertType {
+  HEAT
+  AIR
+  WATER
+  VECTOR
+  SANITATION
+}
+
+enum DistrictAlertStatus {
+  ACTIVE
+  RESOLVED
+  WATCH
+}
+
+enum DistrictResourceActionType {
+  INSPECTION
+  WATER_TESTING
+  FUMIGATION
+}
+
+enum DistrictResourceStatus {
+  RECOMMENDED
+  SCHEDULED
+  COMPLETED
+}
+
 model User {
   id           String       @id @default(uuid())
   name         String
@@ -34,6 +68,7 @@ model User {
   refreshTokens RefreshToken[]
   camps        HealthCamp[] @relation("CampCreator")
   audits       AuditLog[]
+  districtReports DistrictReportSnapshot[]
 
   @@index([childStudentId])
   @@map("users")
@@ -50,9 +85,24 @@ model School {
   users      User[]
   students   Student[]
   camps      HealthCamp[]
+  geoProfile SchoolGeoProfile?
 
   @@index([district])
   @@map("schools")
+}
+
+model SchoolGeoProfile {
+  id        String   @id @default(uuid())
+  schoolId  String   @unique @map("school_id")
+  latitude  Float
+  longitude Float
+  blockName String   @map("block_name")
+  wardName  String   @map("ward_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  school    School   @relation(fields: [schoolId], references: [id])
+
+  @@index([blockName])
+  @@map("school_geo_profiles")
 }
 
 model Student {
@@ -87,6 +137,97 @@ model ClimateData {
   @@index([district])
   @@index([date])
   @@map("climate_data")
+}
+
+model DistrictFieldReport {
+  id         String             @id @default(uuid())
+  district   String
+  blockName  String             @map("block_name")
+  reportType DistrictReportType @map("report_type")
+  severity   Int
+  reportedAt DateTime           @default(now()) @map("reported_at")
+  sourceRole UserRole           @map("source_role")
+
+  @@index([district])
+  @@index([reportedAt])
+  @@index([blockName])
+  @@map("district_field_reports")
+}
+
+model DistrictEnvironmentalAlert {
+  id        String              @id @default(uuid())
+  district  String
+  alertType DistrictAlertType   @map("alert_type")
+  severity  Int
+  startsAt  DateTime            @map("starts_at")
+  endsAt    DateTime            @map("ends_at")
+  status    DistrictAlertStatus @default(ACTIVE)
+
+  @@index([district])
+  @@index([status])
+  @@map("district_environmental_alerts")
+}
+
+model DistrictAttendanceSignalDaily {
+  id                  String   @id @default(uuid())
+  district            String
+  blockName           String   @map("block_name")
+  date                DateTime
+  schoolsReporting    Int      @map("schools_reporting")
+  attendanceDropPct   Float    @map("attendance_drop_pct")
+  symptomClusterIndex Float    @map("symptom_cluster_index")
+  envRiskDelta        Float    @map("env_risk_delta")
+
+  @@index([district])
+  @@index([date])
+  @@index([blockName])
+  @@map("district_attendance_signal_daily")
+}
+
+model DistrictResourceRecommendation {
+  id              String                 @id @default(uuid())
+  district        String
+  blockName       String                 @map("block_name")
+  actionType      DistrictResourceActionType @map("action_type")
+  priorityScore   Float                  @map("priority_score")
+  recommendedDate DateTime               @map("recommended_date")
+  status          DistrictResourceStatus  @default(RECOMMENDED)
+  explanation     String
+  createdAt       DateTime               @default(now()) @map("created_at")
+
+  @@index([district])
+  @@index([priorityScore])
+  @@map("district_resource_recommendations")
+}
+
+model DistrictForecastMonthly {
+  id        String   @id @default(uuid())
+  district  String
+  month     DateTime
+  heatRisk  Float    @map("heat_risk")
+  vectorRisk Float   @map("vector_risk")
+  airRisk   Float    @map("air_risk")
+  confidence Float
+
+  @@index([district])
+  @@index([month])
+  @@map("district_forecast_monthly")
+}
+
+model DistrictReportSnapshot {
+  id            String   @id @default(uuid())
+  district      String
+  generatedAt   DateTime @default(now()) @map("generated_at")
+  modelVersions Json     @map("model_versions")
+  summaryJson   Json     @map("summary_json")
+  pdfPath       String   @map("pdf_path")
+  csvPath       String   @map("csv_path")
+  requestedBy   String   @map("requested_by")
+  requester     User     @relation(fields: [requestedBy], references: [id])
+
+  @@index([district])
+  @@index([requestedBy])
+  @@map("district_report_snapshots")
 }
 
 model SchemeEligibility {

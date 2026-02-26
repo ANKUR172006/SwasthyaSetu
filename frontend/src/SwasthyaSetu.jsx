@@ -29,6 +29,7 @@ import {
   User, FileText, BarChart2, Home, Zap, Star, ArrowRight,
   Building2, GraduationCap, Stethoscope, Baby
 } from "lucide-react";
+import DistrictAdminDashboard from "./district-admin/DistrictAdminDashboard";
 
 // ============================================================
 // MOCK DATA
@@ -858,7 +859,7 @@ const Badge = ({ color = "blue", children, size = "sm" }) => {
 
 const RiskBadge = ({ risk }) => {
   const map = { Low: "green", Medium: "yellow", High: "red" };
-  return <Badge color={map[risk] || "blue"}>{risk === "High" ? "⚠ " : ""}{risk} Risk</Badge>;
+  return <Badge color={map[risk] || "blue"}>{risk === "High" ? "? " : ""}{risk} Risk</Badge>;
 };
 
 const StatCard = ({ icon: Icon, label, value, change, color = "#1e40af", bg, sub, onClick }) => {
@@ -1031,7 +1032,7 @@ const LoginPage = () => {
 
         {error && <p style={{ textAlign: "center", color: "#dc2626", fontSize: "12px", marginTop: "12px" }}>{error}</p>}
         <p style={{ textAlign: "center", color: th.textMuted, fontSize: "11px", marginTop: "16px" }}>
-          🔒 Secured by Digital India & NIC Infrastructure
+          ?? Secured by Digital India & NIC Infrastructure
         </p>
       </div>
     </div>
@@ -1185,8 +1186,11 @@ const Navbar = ({ collapsed, setCollapsed, activePage, setActivePage }) => {
 // ============================================================
 
 const SchoolAdminDashboard = () => {
-  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary, sickLeaveReports = [] } = useApp();
+  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtClimateRisk, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary, sickLeaveReports = [], sendSMS, generateReport } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const [waterInvestment, setWaterInvestment] = useState(20);
+  const [wasteInvestment, setWasteInvestment] = useState(15);
+  const [treeInvestment, setTreeInvestment] = useState(10);
   const highRisk = studentsData.filter(s => s.riskScore === "High");
   const averageAttendance = studentsData.length
     ? Math.round(studentsData.reduce((sum, item) => sum + Number(item.attendance || 0), 0) / studentsData.length)
@@ -1207,6 +1211,72 @@ const SchoolAdminDashboard = () => {
     .slice(0, 8);
   const schoolComparisonDomain = buildScoreDomain(schoolAdminComparison);
   const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 34);
+  const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 0);
+  const waterSafetyScore = Math.max(30, Math.min(95, Math.round(Number(climateMetrics?.waterQuality || 70))));
+  const sanitationScore = Math.max(25, Math.min(95, Math.round(Number(climateMetrics?.wasteRecycled || 65) * 0.75 + waterSafetyScore * 0.25)));
+  const vectorRiskScore = Math.max(5, Math.min(95, Math.round((100 - sanitationScore) * 0.45 + (100 - waterSafetyScore) * 0.25 + Math.max(0, avgTemperature - 28) * 2 + outbreakSignals.symptomClusters.length * 2.5)));
+  const heatVulnerabilityScore = Math.max(5, Math.min(95, Math.round(Math.max(0, avgTemperature - 30) * 4 + heatAlertDays * 2.5 + (100 - Number(averageAttendance || 80)) * 0.2)));
+  const airExposureScore = Math.max(5, Math.min(95, Math.round(avgAqi * 0.35 + outbreakSignals.symptomClusters.filter((item) => ["cough", "breathlessness", "wheezing"].includes(String(item?.symptom || "").toLowerCase())).length * 5)));
+  const attendanceAnomaly = Math.max(0, Math.min(100, 100 - averageAttendance));
+  const schoolEnvironmentalHealthIndex = Math.max(0, Math.min(100, Math.round(
+    waterSafetyScore * 0.22 +
+    sanitationScore * 0.18 +
+    (100 - vectorRiskScore) * 0.18 +
+    (100 - heatVulnerabilityScore) * 0.16 +
+    (100 - airExposureScore) * 0.16 +
+    (100 - attendanceAnomaly) * 0.10
+  )));
+  const airTrend = [
+    { month: "Jan", aqi: Math.max(70, Math.round(avgAqi - 28)), resp: 8 },
+    { month: "Feb", aqi: Math.max(75, Math.round(avgAqi - 16)), resp: 9 },
+    { month: "Mar", aqi: Math.max(80, Math.round(avgAqi - 6)), resp: 11 },
+    { month: "Apr", aqi: Math.max(85, Math.round(avgAqi + 4)), resp: 12 },
+    { month: "May", aqi: Math.max(90, Math.round(avgAqi + 10)), resp: 14 },
+    { month: "Jun", aqi: Math.max(85, Math.round(avgAqi + 2)), resp: 13 },
+  ];
+  const heatAbsenceTrend = [
+    { month: "Jan", heat: Math.max(28, avgTemperature - 4), absent: 7 },
+    { month: "Feb", heat: Math.max(29, avgTemperature - 3), absent: 8 },
+    { month: "Mar", heat: Math.max(31, avgTemperature - 2), absent: 9 },
+    { month: "Apr", heat: Math.max(33, avgTemperature), absent: 10 },
+    { month: "May", heat: Math.max(35, avgTemperature + 2), absent: 12 },
+    { month: "Jun", heat: Math.max(34, avgTemperature + 1), absent: 11 },
+  ];
+  const rainMosquitoTrend = [
+    { month: "Jan", rain: 12, mosquito: 18 },
+    { month: "Feb", rain: 18, mosquito: 22 },
+    { month: "Mar", rain: 26, mosquito: 31 },
+    { month: "Apr", rain: 38, mosquito: 45 },
+    { month: "May", rain: 54, mosquito: 58 },
+    { month: "Jun", rain: 48, mosquito: 54 },
+  ];
+  const correlation = (pairs, xKey, yKey) => {
+    const n = pairs.length;
+    if (n < 2) return 0;
+    const xs = pairs.map((p) => Number(p[xKey] || 0));
+    const ys = pairs.map((p) => Number(p[yKey] || 0));
+    const meanX = xs.reduce((a, b) => a + b, 0) / n;
+    const meanY = ys.reduce((a, b) => a + b, 0) / n;
+    const cov = xs.reduce((acc, x, idx) => acc + (x - meanX) * (ys[idx] - meanY), 0);
+    const varX = xs.reduce((acc, x) => acc + (x - meanX) ** 2, 0);
+    const varY = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0);
+    const denom = Math.sqrt(varX * varY);
+    if (!denom) return 0;
+    return Number((cov / denom).toFixed(2));
+  };
+  const heatAttendanceCorr = correlation(heatAbsenceTrend, "heat", "absent");
+  const rainMosquitoCorr = correlation(rainMosquitoTrend, "rain", "mosquito");
+  const aqiRespCorr = correlation(airTrend, "aqi", "resp");
+  const riskContributors = [
+    { key: "Water & Sanitation", risk: Math.round((100 - waterSafetyScore) * 0.6 + (100 - sanitationScore) * 0.4), recommendation: "Water tank inspection required. Increase chlorination and weekly cleaning checks." },
+    { key: "Vector Exposure", risk: vectorRiskScore, recommendation: "High mosquito risk - fumigation and stagnant-water source removal recommended." },
+    { key: "Heat Stress", risk: heatVulnerabilityScore, recommendation: "Install shade in playground and move outdoor PT away from peak afternoon heat." },
+    { key: "Air Exposure", risk: airExposureScore, recommendation: "Poor AQI days: reduce outdoor activity and activate clean-air classroom protocol." },
+  ].sort((a, b) => b.risk - a.risk);
+  const simulatedRiskReduction = Math.max(0, Math.min(45, Math.round(waterInvestment * 0.35 + wasteInvestment * 0.3 + treeInvestment * 0.25)));
+  const projectedIndex = Math.max(0, Math.min(100, schoolEnvironmentalHealthIndex + Math.round(simulatedRiskReduction * 0.6)));
 
   return (
     <div>
@@ -1215,7 +1285,7 @@ const SchoolAdminDashboard = () => {
         <div style={{ background: "linear-gradient(135deg, #dc2626, #b91c1c)", borderRadius: "12px", padding: "14px 20px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "12px", animation: "pulse 2s infinite" }}>
           <AlertTriangle size={22} color="#fff" />
           <div style={{ flex: 1 }}>
-            <p style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>🚨 EMERGENCY ALERT — {highRisk.length} Students at HIGH RISK</p>
+            <p style={{ color: "#fff", fontWeight: 700, fontSize: "14px" }}>?? EMERGENCY ALERT — {highRisk.length} Students at HIGH RISK</p>
             <p style={{ color: "#fecaca", fontSize: "12px" }}>Immediate health screening required. Parents have been notified.</p>
           </div>
           <button style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "6px", padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}>View All</button>
@@ -1232,6 +1302,33 @@ const SchoolAdminDashboard = () => {
         <StatCard icon={Activity} label="Avg. Attendance" value={`${averageAttendance}%`} change={-0.8} color="#0891b2" />
         <StatCard icon={AlertCircle} label="Outbreak Spread Risk" value={`${outbreakSignals.triageScore}/100`} color={outbreakSignals.spreadLevel === "High" ? "#dc2626" : outbreakSignals.spreadLevel === "Medium" ? "#d97706" : "#16a34a"} sub={outbreakSignals.spreadLevel} />
       </div>
+      <Card title="School Environmental Health Index (AI Weighted)">
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: "12px" }}>
+          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+            <p style={{ color: th.textMuted, fontSize: "11px" }}>Overall Health Resilience Score</p>
+            <p style={{ color: th.text, fontSize: "34px", fontWeight: 800 }}>{schoolEnvironmentalHealthIndex}<span style={{ fontSize: "15px", color: th.textMuted }}>/100</span></p>
+            <p style={{ color: th.textMuted, fontSize: "11px" }}>Model inputs: weather, AQI, attendance anomaly, sanitation score, student symptom reports.</p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
+            {[
+              { label: "Water Safety", value: waterSafetyScore, goodHigh: true },
+              { label: "Sanitation", value: sanitationScore, goodHigh: true },
+              { label: "Vector Risk", value: vectorRiskScore, goodHigh: false },
+              { label: "Heat Vulnerability", value: heatVulnerabilityScore, goodHigh: false },
+              { label: "Air Exposure", value: airExposureScore, goodHigh: false },
+              { label: "Attendance Anomaly", value: attendanceAnomaly, goodHigh: false },
+            ].map((item) => {
+              const isGood = item.goodHigh ? item.value >= 70 : item.value <= 40;
+              return (
+                <div key={item.label} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px" }}>
+                  <p style={{ color: th.textMuted, fontSize: "10px" }}>{item.label}</p>
+                  <p style={{ color: isGood ? "#16a34a" : "#dc2626", fontWeight: 700, fontSize: "15px" }}>{item.value}/100</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Card>
 
       {/* Charts Row */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px", marginBottom: "24px" }}>
@@ -1267,6 +1364,144 @@ const SchoolAdminDashboard = () => {
               <Legend />
             </PieChart>
           </ResponsiveContainer>
+        </Card>
+      </div>
+      <div style={{ marginBottom: "16px" }}>
+        <Card title="Trend Analytics (Monthly / Seasonal Correlation)">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+            <div>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>Heat Trend vs Absentee Rate (r={heatAttendanceCorr})</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={heatAbsenceTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <YAxis tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="heat" stroke="#ef4444" name="Heat (°C)" strokeWidth={2} />
+                  <Line type="monotone" dataKey="absent" stroke="#1d4ed8" name="Absentee %" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>Rainfall vs Mosquito Risk (r={rainMosquitoCorr})</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={rainMosquitoTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <YAxis tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="rain" stroke="#0ea5e9" name="Rainfall Index" strokeWidth={2} />
+                  <Line type="monotone" dataKey="mosquito" stroke="#f59e0b" name="Mosquito Risk" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>AQI vs Respiratory Complaints (r={aqiRespCorr})</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={airTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <YAxis tick={{ fontSize: 10, fill: th.textMuted }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="aqi" stroke="#7c3aed" name="AQI" strokeWidth={2} />
+                  <Line type="monotone" dataKey="resp" stroke="#16a34a" name="Respiratory Complaints" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </Card>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Resource Priority Recommendation">
+          {riskContributors.map((item) => (
+            <div key={item.key} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "9px 10px", marginBottom: "8px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.key} • Risk {item.risk}/100</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>{item.recommendation}</p>
+            </div>
+          ))}
+        </Card>
+        <Card title="Issue Escalation System">
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <Button
+              variant="danger"
+              onClick={() => sendSMS("919999999999", `District escalation: School risk index ${schoolEnvironmentalHealthIndex}/100. Top risk: ${riskContributors[0]?.key || "N/A"}. Inspection request raised.`)}
+            >
+              Forward Risk Alert to District
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => generateReport("inspection-request.json", {
+                requestedAt: new Date().toISOString(),
+                schoolEnvironmentalHealthIndex,
+                topRisks: riskContributors.slice(0, 3),
+                outbreakSignals
+              })}
+            >
+              Request Inspection
+            </Button>
+            <Button
+              variant="success"
+              onClick={() => generateReport("environmental-compliance-report.json", {
+                generatedAt: new Date().toISOString(),
+                schoolEnvironmentalHealthIndex,
+                waterSafetyScore,
+                sanitationScore,
+                vectorRiskScore,
+                heatVulnerabilityScore,
+                airExposureScore,
+                recommendations: riskContributors
+              })}
+            >
+              Generate Compliance Report
+            </Button>
+          </div>
+        </Card>
+      </div>
+      <div style={{ marginBottom: "16px" }}>
+        <Card title="Budget Impact Simulator">
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+            <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <label style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>Water Filtration Investment: {waterInvestment}%</label>
+              <input type="range" min="0" max="40" value={waterInvestment} onChange={(e) => setWaterInvestment(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+              <label style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginTop: "8px", display: "block" }}>Waste Management Investment: {wasteInvestment}%</label>
+              <input type="range" min="0" max="40" value={wasteInvestment} onChange={(e) => setWasteInvestment(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+              <label style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginTop: "8px", display: "block" }}>Tree Plantation Investment: {treeInvestment}%</label>
+              <input type="range" min="0" max="40" value={treeInvestment} onChange={(e) => setTreeInvestment(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+            </div>
+            <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Expected risk reduction</p>
+              <p style={{ color: "#16a34a", fontSize: "26px", fontWeight: 800 }}>{simulatedRiskReduction}%</p>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginTop: "4px" }}>Projected School Environmental Health Index</p>
+              <p style={{ color: th.text, fontSize: "20px", fontWeight: 700 }}>{schoolEnvironmentalHealthIndex} {"->"} {projectedIndex}</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+      <div style={{ marginBottom: "16px" }}>
+        <Card title="Compliance & Sustainability Report">
+          <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "8px" }}>
+            Auto-generate governance-ready report with risk summary, climate vulnerability, improvement roadmap, and green initiative status.
+          </p>
+          <Button
+            icon={Download}
+            onClick={() => generateReport("school-sustainability-compliance-report.json", {
+              generatedAt: new Date().toISOString(),
+              schoolEnvironmentalHealthIndex,
+              climateVulnerability: {
+                vectorRiskScore,
+                heatVulnerabilityScore,
+                airExposureScore
+              },
+              improvementRecommendations: riskContributors.map((r) => r.recommendation),
+              greenStatus: {
+                treesPlanted: climateMetrics?.treesPlanted,
+                solarPanels: climateMetrics?.solarPanels,
+                wasteRecycled: climateMetrics?.wasteRecycled
+              }
+            })}
+          >
+            Generate Sustainability Compliance Report
+          </Button>
         </Card>
       </div>
 
@@ -1346,102 +1581,264 @@ const SchoolAdminDashboard = () => {
 };
 
 const TeacherDashboard = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS, sickLeaveReports = [] } = useApp();
+  const {
+    darkMode,
+    studentsData = students,
+    sickLeaveReports = [],
+    districtClimateRisk,
+    climateMetrics = climateData,
+    sendSMS,
+    generateReport
+  } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
 
-  const classStudents = studentsData.slice(0, 35);
-  const dueVaccinations = classStudents.filter(s => !s.vaccinated).length;
-  const riskCount = { Low: 0, Medium: 0, High: 0 };
-  classStudents.forEach(s => riskCount[s.riskScore]++);
-  const averageClassAttendance = classStudents.length
-    ? Math.round(classStudents.reduce((acc, item) => acc + Number(item.attendance || 0), 0) / classStudents.length)
+  const classStudents = studentsData.slice(0, 40);
+  const classTrend = buildAttendanceInsightData(classStudents);
+  const attendanceValues = classTrend.map((item) => Number(item.attendance || 0));
+  const attendanceAvg = attendanceValues.length
+    ? attendanceValues.reduce((sum, value) => sum + value, 0) / attendanceValues.length
     : 0;
-  const classOutbreakSignals = buildOutbreakSignals(classStudents, sickLeaveReports);
+  const attendanceStd = attendanceValues.length > 1
+    ? Math.sqrt(attendanceValues.reduce((sum, value) => sum + (value - attendanceAvg) ** 2, 0) / attendanceValues.length)
+    : 0;
+  const latestAttendance = attendanceValues[attendanceValues.length - 1] || attendanceAvg;
+  const attendanceZ = attendanceStd ? (latestAttendance - attendanceAvg) / attendanceStd : 0;
+  const attendanceAnomalyAlert = attendanceZ <= -1.2 || latestAttendance <= 78;
+
+  const [symptomLogs, setSymptomLogs] = useState(() => {
+    return (sickLeaveReports || []).slice(0, 16).map((item, index) => ({
+      id: `${Date.now()}-${index}`,
+      symptom: String((item?.symptoms || "").split(",")[0] || "fatigue").trim().toLowerCase(),
+      cases: 1,
+      className: String(item?.className || "Class 6"),
+      createdAt: item?.reportedAt || new Date().toISOString(),
+      source: "teacher-log"
+    }));
+  });
+  const [symptomForm, setSymptomForm] = useState({ symptom: "fever", cases: 1, className: "Class 6" });
+
+  const clusterMap = symptomLogs.reduce((acc, item) => {
+    const key = `${item.className}::${item.symptom}`;
+    const current = acc[key] || { className: item.className, symptom: item.symptom, totalCases: 0 };
+    current.totalCases += Number(item.cases || 0);
+    acc[key] = current;
+    return acc;
+  }, {});
+  const symptomClusters = Object.values(clusterMap)
+    .filter((item) => item.totalCases >= 3)
+    .sort((a, b) => b.totalCases - a.totalCases);
+
+  const [hazardReports, setHazardReports] = useState([
+    { id: "hz-1", type: "garbage", location: "Class 6 corridor", status: "pending", aiTag: "probable_garbage" },
+    { id: "hz-2", type: "stagnant_water", location: "Playground corner", status: "pending", aiTag: "probable_stagnant_water" },
+    { id: "hz-3", type: "dirty_facility", location: "Washroom block A", status: "pending", aiTag: "facility_hygiene_issue" }
+  ]);
+
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 128);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 35);
+  const heatIndex = Math.round(avgTemperature + Math.max(0, Number(climateMetrics?.heatwaveRisk === "High" ? 5 : 2)));
+  const vectorRiskScore = Math.min(100, Math.round((100 - Number(climateMetrics?.waterQuality || 70)) * 0.4 + symptomClusters.length * 8 + 22));
+  const waterSafetyStatus = Number(climateMetrics?.waterQuality || 68) >= 75 ? "Safe" : Number(climateMetrics?.waterQuality || 68) >= 55 ? "Watch" : "Unsafe";
+  const aqiStatus = avgAqi >= 180 ? "Unhealthy" : avgAqi >= 120 ? "Moderate" : "Good";
+  const heatStatus = heatIndex >= 40 ? "High" : heatIndex >= 36 ? "Moderate" : "Low";
+  const vectorStatus = vectorRiskScore >= 70 ? "High" : vectorRiskScore >= 45 ? "Moderate" : "Low";
+
+  const riskScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        (attendanceAnomalyAlert ? 24 : 8) +
+        symptomClusters.length * 14 +
+        (heatStatus === "High" ? 18 : heatStatus === "Moderate" ? 9 : 3) +
+        (vectorStatus === "High" ? 18 : vectorStatus === "Moderate" ? 9 : 3) +
+        (aqiStatus === "Unhealthy" ? 16 : aqiStatus === "Moderate" ? 8 : 2)
+      )
+    )
+  );
+  const riskCategory = riskScore >= 70 ? "High" : riskScore >= 45 ? "Moderate" : "Low";
+
+  const interventionMap = {
+    High: [
+      "Conduct classroom sanitation check",
+      "Reduce outdoor activity",
+      "Inform principal",
+      "Notify health worker"
+    ],
+    Moderate: [
+      "Check classroom hygiene checklist",
+      "Review outdoor period duration",
+      "Flag class for monitoring"
+    ],
+    Low: [
+      "Continue routine monitoring",
+      "Reinforce hydration and hygiene reminders"
+    ]
+  };
+
+  const adaptiveActions = [];
+  if (heatIndex >= 40) {
+    adaptiveActions.push("Shift assembly indoors", "Send hydration reminders");
+  }
+  if (avgAqi >= 150) {
+    adaptiveActions.push("Issue mask advisory", "Limit outdoor activity duration");
+  }
+
+  const submitSymptomLog = () => {
+    const cases = Math.max(1, Number(symptomForm.cases || 1));
+    setSymptomLogs((prev) => [
+      {
+        id: `sym-${Date.now()}`,
+        symptom: String(symptomForm.symptom || "fatigue").toLowerCase(),
+        cases,
+        className: symptomForm.className || "Class 6",
+        createdAt: new Date().toISOString(),
+        source: "teacher-log"
+      },
+      ...prev
+    ].slice(0, 60));
+  };
+
+  const updateHazardStatus = (id, status) => {
+    setHazardReports((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
+  };
+
+  const generateMonthlySummary = () => {
+    const summaryPayload = {
+      generatedAt: new Date().toISOString(),
+      panel: "teacher_climate_health_monitoring_console",
+      attendance: {
+        average: Math.round(attendanceAvg),
+        anomalyZScore: Number(attendanceZ.toFixed(2)),
+        anomalyAlert: attendanceAnomalyAlert
+      },
+      riskAlerts: {
+        riskScore,
+        riskCategory,
+        symptomClusterCount: symptomClusters.length,
+        heatStatus,
+        vectorStatus,
+        waterSafetyStatus,
+        aqiStatus
+      },
+      environmentalIncidents: hazardReports,
+      actionsTaken: {
+        recommendedActions: interventionMap[riskCategory],
+        adaptiveActions
+      },
+      notice: "Preventive intelligence only. This summary is not a medical diagnosis."
+    };
+    generateReport("teacher-monthly-class-health-summary.json", summaryPayload);
+  };
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-        <StatCard icon={Users} label="Class Students" value={classStudents.length} color="#1e40af" />
-        <StatCard icon={AlertTriangle} label="High Risk" value={riskCount.High} color="#dc2626" bg={riskCount.High > 0 ? "#dc2626" : undefined} />
-        <StatCard icon={Syringe} label="Vaccination Due" value={dueVaccinations} color="#d97706" />
-        <StatCard icon={Activity} label="Class Attendance" value={`${averageClassAttendance}%`} color="#16a34a" />
-        <StatCard icon={AlertCircle} label="Spread Alert" value={classOutbreakSignals.spreadLevel} color={classOutbreakSignals.spreadLevel === "High" ? "#dc2626" : classOutbreakSignals.spreadLevel === "Medium" ? "#d97706" : "#16a34a"} />
+      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "10px 12px", marginBottom: "16px" }}>
+        <p style={{ color: "#1e3a8a", fontWeight: 700, fontSize: "12px" }}>Teacher Climate & Health Monitoring Console</p>
+        <p style={{ color: "#1e40af", fontSize: "11px" }}>Preventive intelligence only. No diagnosis or treatment output.</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
-        <Card title="Vaccination Due List">
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {vaccinationSchedule.map((v, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
-                <div>
-                  <p style={{ color: th.text, fontWeight: 600, fontSize: "13px" }}>{v.vaccine}</p>
-                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{v.students.slice(0, 2).join(", ")}{v.students.length > 2 ? " ..." : ""}</p>
-                </div>
-                <Badge color="orange">{v.dueCount} Due</Badge>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        <StatCard icon={Activity} label="Attendance Trend" value={`${Math.round(attendanceAvg)}%`} color="#1d4ed8" />
+        <StatCard icon={AlertTriangle} label="Absentee Spike" value={attendanceAnomalyAlert ? "Flagged" : "Stable"} color={attendanceAnomalyAlert ? "#dc2626" : "#16a34a"} />
+        <StatCard icon={Thermometer} label="Heat Alert" value={heatStatus} color={heatStatus === "High" ? "#dc2626" : heatStatus === "Moderate" ? "#d97706" : "#16a34a"} />
+        <StatCard icon={Droplets} label="Vector Risk" value={vectorStatus} color={vectorStatus === "High" ? "#dc2626" : vectorStatus === "Moderate" ? "#d97706" : "#16a34a"} />
+        <StatCard icon={Shield} label="Water Safety" value={waterSafetyStatus} color={waterSafetyStatus === "Unsafe" ? "#dc2626" : waterSafetyStatus === "Watch" ? "#d97706" : "#16a34a"} />
+        <StatCard icon={Wind} label="AQI Status" value={aqiStatus} color={aqiStatus === "Unhealthy" ? "#dc2626" : aqiStatus === "Moderate" ? "#d97706" : "#16a34a"} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Class Health Monitoring Dashboard">
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={classTrend}>
+              <defs>
+                <linearGradient id="teacherAttendGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: th.textMuted }} />
+              <YAxis tick={{ fontSize: 10, fill: th.textMuted }} />
+              <Tooltip />
+              <Area type="monotone" dataKey="attendance" stroke="#2563eb" fill="url(#teacherAttendGrad)" name="Attendance %" />
+              <Line type="monotone" dataKey="healthIncidents" stroke="#ef4444" name="Incident Signals" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+          <p style={{ color: th.textMuted, fontSize: "11px", marginTop: "8px" }}>
+            AI Anomaly Detection (Z-score): {attendanceAnomalyAlert ? "attendance pattern is abnormally low" : "attendance trend within expected range"}.
+          </p>
+        </Card>
+
+        <Card title="Risk-Based Action Recommendations">
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>Class risk category: <strong>{riskCategory}</strong> ({riskScore}/100)</p>
+          {interventionMap[riskCategory].map((action, idx) => (
+            <p key={idx} style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>{idx + 1}. {action}</p>
+          ))}
+          <Button
+            variant="secondary"
+            onClick={() => sendSMS("919999999999", `Teacher preventive alert: class risk ${riskCategory} (${riskScore}/100). Please review recommended classroom actions.`)}
+          >
+            Notify Principal / Health Worker
+          </Button>
+        </Card>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Symptom Logging & Cluster Detection">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "8px", marginBottom: "10px" }}>
+            <select value={symptomForm.symptom} onChange={(e) => setSymptomForm((prev) => ({ ...prev, symptom: e.target.value }))} style={{ padding: "7px", borderRadius: "7px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#fff", color: th.text }}>
+              <option value="fever">Fever</option>
+              <option value="vomiting">Vomiting</option>
+              <option value="respiratory">Respiratory issues</option>
+              <option value="fatigue">Fatigue</option>
+            </select>
+            <input type="number" min="1" max="20" value={symptomForm.cases} onChange={(e) => setSymptomForm((prev) => ({ ...prev, cases: Number(e.target.value || 1) }))} style={{ padding: "7px", borderRadius: "7px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#fff", color: th.text }} />
+            <input value={symptomForm.className} onChange={(e) => setSymptomForm((prev) => ({ ...prev, className: e.target.value }))} placeholder="Class" style={{ padding: "7px", borderRadius: "7px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#fff", color: th.text }} />
+            <Button size="sm" onClick={submitSymptomLog}>Log</Button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {symptomClusters.slice(0, 6).map((cluster, idx) => (
+              <div key={`${cluster.className}-${cluster.symptom}-${idx}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px" }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{cluster.className} • {cluster.symptom}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>{cluster.totalCases} reported cases - cluster alert</p>
               </div>
             ))}
+            {symptomClusters.length === 0 && <p style={{ color: th.textMuted, fontSize: "12px" }}>No unusual symptom cluster detected yet.</p>}
           </div>
         </Card>
 
-        <Card title="Risk Distribution — Class 6A">
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={[
-              { name: "Low Risk", count: riskCount.Low, fill: "#22c55e" },
-              { name: "Medium", count: riskCount.Medium, fill: "#f59e0b" },
-              { name: "High Risk", count: riskCount.High, fill: "#ef4444" },
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: th.textMuted }} />
-              <YAxis tick={{ fontSize: 11, fill: th.textMuted }} />
-              <Tooltip />
-              <Bar dataKey="count" name="Students">
-                {[{ fill: "#22c55e" }, { fill: "#f59e0b" }, { fill: "#ef4444" }].map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        <Card title="Heat & AQI Adaptive Mode">
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>Heat Index: <strong>{heatIndex}</strong> | AQI: <strong>{Math.round(avgAqi)}</strong></p>
+          {adaptiveActions.length > 0 ? adaptiveActions.map((item, idx) => (
+            <p key={idx} style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>{idx + 1}. {item}</p>
+          )) : (
+            <p style={{ color: th.textMuted, fontSize: "12px" }}>No adaptive change required currently.</p>
+          )}
         </Card>
       </div>
 
-      {/* Parent Communication Panel */}
-      <Card title="Parent Communication Panel">
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {classStudents.filter(s => s.riskScore !== "Low").slice(0, 6).map(s => (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
-              <div style={{ width: "36px", height: "36px", background: s.riskScore === "High" ? "#fee2e2" : "#fef9c3", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>
-                {s.name.charAt(0)}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Hazard Verification Panel">
+          {hazardReports.map((hazard) => (
+            <div key={hazard.id} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px", marginBottom: "8px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{hazard.type.replace("_", " ")} • {hazard.location}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>AI validation: {hazard.aiTag}</p>
+              <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                <button onClick={() => updateHazardStatus(hazard.id, "approved")} style={{ border: "none", borderRadius: "6px", background: "#1d4ed8", color: "#fff", padding: "5px 8px", fontSize: "11px", cursor: "pointer" }}>Approve</button>
+                <button onClick={() => updateHazardStatus(hazard.id, "escalated")} style={{ border: "none", borderRadius: "6px", background: "#d97706", color: "#fff", padding: "5px 8px", fontSize: "11px", cursor: "pointer" }}>Escalate</button>
+                <button onClick={() => updateHazardStatus(hazard.id, "resolved")} style={{ border: "none", borderRadius: "6px", background: "#16a34a", color: "#fff", padding: "5px 8px", fontSize: "11px", cursor: "pointer" }}>Resolve</button>
               </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ color: th.text, fontWeight: 600, fontSize: "13px" }}>{s.name}</p>
-                <p style={{ color: th.textMuted, fontSize: "11px" }}>{s.class} | {s.condition}</p>
-              </div>
-              <RiskBadge risk={s.riskScore} />
-              <button onClick={() => callParent(s.parentPhone, s.name)} style={{ background: "#1e40af", color: "#fff", border: "none", borderRadius: "6px", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px" }}>
-                <Phone size={11} /> Call
-              </button>
-              <button onClick={() => sendSMS(s.parentPhone, { studentName: s.name, riskLevel: s.riskScore, condition: s.condition, language: "en" })} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: "6px", padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px" }}>
-                <MessageSquare size={11} /> SMS
-              </button>
+              <p style={{ color: th.textMuted, fontSize: "10px", marginTop: "4px" }}>Status: {hazard.status}</p>
             </div>
           ))}
-        </div>
-      </Card>
+        </Card>
 
-      <div style={{ marginTop: "16px" }}>
-        <Card title="Class Outbreak Signals">
-          <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>Likely cluster: <strong>{classOutbreakSignals.likelyDiseaseFamily}</strong></p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-            {classOutbreakSignals.symptomClusters.slice(0, 4).map((cluster, idx) => (
-              <div key={`${cluster.className}-${cluster.symptom}-${idx}`} style={{ padding: "8px", borderRadius: "8px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#f8fafc" }}>
-                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{cluster.symptom}</p>
-                <p style={{ color: th.textMuted, fontSize: "11px" }}>{cluster.count} recent sick leaves</p>
-              </div>
-            ))}
-            {classOutbreakSignals.symptomClusters.length === 0 && (
-              <p style={{ color: th.textMuted, fontSize: "12px" }}>No active symptom cluster in this class group.</p>
-            )}
-          </div>
+        <Card title="Monthly Class Health Summary">
+          <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "8px" }}>
+            Includes attendance anomalies, risk alerts, environmental incidents, and actions taken.
+          </p>
+          <Button icon={Download} onClick={generateMonthlySummary}>Download Summary for Principal</Button>
         </Card>
       </div>
     </div>
@@ -1513,7 +1910,7 @@ const ParentDashboard = () => {
             <p style={{ color: "#fecaca", fontSize: "12px" }}>Your child has been flagged for immediate medical attention. Health Worker Assigned: Dr. Mohan Verma</p>
           </div>
           <button onClick={() => callParent("108", "Emergency Helpline")} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "6px", padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
-            📞 Call Doctor
+            ?? Call Doctor
           </button>
         </div>
       )}
@@ -1641,7 +2038,7 @@ const SuperAdminDashboard = () => {
 
       {/* School Rankings */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-        <Card title="🏆 School Health Rankings — Panipat District">
+        <Card title="?? School Health Rankings — Panipat District">
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {sortedRanking.slice(0, 12).map((s, i) => (
               <div key={s.school} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
@@ -1704,6 +2101,430 @@ const SuperAdminDashboard = () => {
           {genAiSchoolSummary || "No executive brief available yet."}
         </p>
       </Card>
+    </div>
+  );
+};
+
+const SuperAdminCommandCenter = () => {
+  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students, sickLeaveReports = [], generateReport, districtAdminRequest } = useApp();
+  const th = theme[darkMode ? "dark" : "light"];
+  const nationalDistricts = (Array.isArray(districtRanking) ? districtRanking : districtData).map((item, idx) => {
+    const score = Number(item?.score ?? 72);
+    return {
+      district: String(item?.school || `District ${idx + 1}`),
+      score: Math.max(0, Math.min(100, score)),
+      riskBand: score < 70 ? "High" : score < 82 ? "Moderate" : "Low",
+      population: 90000 + idx * 4500,
+      historicalVulnerability: Math.max(10, Math.round((100 - score) * 0.9 + idx * 1.2)),
+      inspectionGap: Math.max(1, Math.round(2 + (100 - score) * 0.1)),
+    };
+  }).slice(0, 20);
+  const riskCounts = nationalDistricts.reduce((acc, item) => {
+    if (item.riskBand === "High") acc.high += 1;
+    else if (item.riskBand === "Moderate") acc.moderate += 1;
+    else acc.low += 1;
+    return acc;
+  }, { low: 0, moderate: 0, high: 0 });
+  const totalDistricts = Math.max(1, nationalDistricts.length);
+  const lowPct = Math.round((riskCounts.low / totalDistricts) * 100);
+  const moderatePct = Math.round((riskCounts.moderate / totalDistricts) * 100);
+  const highPct = Math.round((riskCounts.high / totalDistricts) * 100);
+  const topVulnerable = [...nationalDistricts].sort((a, b) => a.score - b.score).slice(0, 10);
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 140);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 36);
+  const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 6);
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const resilienceIndex = Math.max(20, Math.min(100, Math.round(
+    nationalDistricts.reduce((sum, item) => sum + item.score, 0) / Math.max(1, nationalDistricts.length) * 0.55 +
+    (100 - avgAqi * 0.35) * 0.2 +
+    (100 - heatAlertDays * 5) * 0.15 +
+    (100 - outbreakSignals.triageScore) * 0.1
+  )));
+  const climateTrend = [
+    { month: "Jan", risk: 64, heatImpact: 48, aqiImpact: Math.max(35, avgAqi - 42) },
+    { month: "Feb", risk: 66, heatImpact: 52, aqiImpact: Math.max(40, avgAqi - 30) },
+    { month: "Mar", risk: 69, heatImpact: 58, aqiImpact: Math.max(45, avgAqi - 15) },
+    { month: "Apr", risk: 73, heatImpact: 66, aqiImpact: Math.max(50, avgAqi - 6) },
+    { month: "May", risk: 77, heatImpact: 74, aqiImpact: Math.max(55, avgAqi + 8) },
+    { month: "Jun", risk: 72, heatImpact: 68, aqiImpact: Math.max(52, avgAqi + 2) }
+  ];
+  const [selectedZone, setSelectedZone] = useState(topVulnerable[0]?.district || "District 1");
+  const geoClusters = topVulnerable.map((item, idx) => ({
+    district: item.district,
+    type: idx % 4 === 0 ? "Heat stress district" : idx % 4 === 1 ? "Water contamination belt" : idx % 4 === 2 ? "Mosquito risk zone" : "Climate vulnerability cluster",
+    severity: Math.max(20, Math.round((100 - item.score) * 1.1))
+  }));
+  const crossDistrictOutbreakFlag = outbreakSignals.attendanceSignals.classAlerts.length >= 2 && outbreakSignals.symptomClusters.length >= 2 && (avgTemperature >= 38 || avgAqi >= 160);
+  const resourceQueue = [...topVulnerable].slice(0, 6).map((item, idx) => {
+    const severity = Math.max(0, Math.min(100, Math.round((100 - item.score) * 1.1)));
+    const populationLoad = Math.max(0, Math.min(100, Math.round(item.population / 2000)));
+    const historical = Math.max(0, Math.min(100, item.historicalVulnerability));
+    const inspectionGap = Math.max(0, Math.min(100, item.inspectionGap * 9));
+    const priorityScore = Math.round(severity * 0.4 + populationLoad * 0.2 + historical * 0.2 + inspectionGap * 0.2);
+    const recommendation = idx % 3 === 0 ? "Deploy inspection team" : idx % 3 === 1 ? "Prioritize fumigation" : "Issue heatwave advisory";
+    return { ...item, severity, populationLoad, historical, inspectionGap, priorityScore, recommendation };
+  }).sort((a, b) => b.priorityScore - a.priorityScore);
+  const correlation = (rows, xKey, yKey) => {
+    const n = rows.length;
+    if (n < 2) return 0;
+    const xs = rows.map((r) => Number(r[xKey] || 0));
+    const ys = rows.map((r) => Number(r[yKey] || 0));
+    const meanX = xs.reduce((a, b) => a + b, 0) / n;
+    const meanY = ys.reduce((a, b) => a + b, 0) / n;
+    const cov = xs.reduce((acc, x, i) => acc + (x - meanX) * (ys[i] - meanY), 0);
+    const varX = xs.reduce((acc, x) => acc + (x - meanX) ** 2, 0);
+    const varY = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0);
+    const denom = Math.sqrt(varX * varY);
+    return denom ? Number((cov / denom).toFixed(2)) : 0;
+  };
+  const rainMosquito = [{ month: "Jan", rain: 20, mosquito: 28 }, { month: "Feb", rain: 32, mosquito: 38 }, { month: "Mar", rain: 47, mosquito: 51 }, { month: "Apr", rain: 58, mosquito: 63 }, { month: "May", rain: 64, mosquito: 70 }, { month: "Jun", rain: 71, mosquito: 78 }];
+  const heatAbsence = [{ month: "Jan", heat: 31, absent: 7 }, { month: "Feb", heat: 33, absent: 9 }, { month: "Mar", heat: 36, absent: 12 }, { month: "Apr", heat: 39, absent: 15 }, { month: "May", heat: 42, absent: 18 }, { month: "Jun", heat: 40, absent: 16 }];
+  const aqiResp = [{ month: "Jan", aqi: 118, resp: 20 }, { month: "Feb", aqi: 126, resp: 23 }, { month: "Mar", aqi: 142, resp: 27 }, { month: "Apr", aqi: 155, resp: 31 }, { month: "May", aqi: 166, resp: 34 }, { month: "Jun", aqi: 160, resp: 33 }];
+  const [waterImprove, setWaterImprove] = useState(15);
+  const [treeCoverImprove, setTreeCoverImprove] = useState(12);
+  const [superAdminApiData, setSuperAdminApiData] = useState(null);
+  const projectedRiskReduction = Math.max(0, Math.min(40, Math.round(waterImprove * 0.5 + treeCoverImprove * 0.35)));
+  const projectedHeatReduction = Math.max(0, Math.min(28, Math.round(treeCoverImprove * 0.55)));
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const [overview, trends, optimization, fraud] = await Promise.all([
+          districtAdminRequest("/district/all-india/super-admin/national-overview"),
+          districtAdminRequest("/district/all-india/super-admin/climate-impact-trends"),
+          districtAdminRequest("/district/all-india/super-admin/resource-optimization?limit=12"),
+          districtAdminRequest("/district/all-india/super-admin/fraud-anomalies")
+        ]);
+        if (!mounted) return;
+        setSuperAdminApiData({ overview, trends, optimization, fraud });
+      } catch {
+        // fallback to local synthesized view
+      }
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [districtAdminRequest]);
+
+  const downloadNationalReport = () => {
+    generateReport("national-climate-health-compliance-report.json", {
+      generatedAt: new Date().toISOString(),
+      lowPct: superAdminApiData?.overview?.riskDistribution?.lowPct ?? lowPct,
+      moderatePct: superAdminApiData?.overview?.riskDistribution?.moderatePct ?? moderatePct,
+      highPct: superAdminApiData?.overview?.riskDistribution?.highPct ?? highPct,
+      topVulnerableDistricts: superAdminApiData?.overview?.topVulnerableDistricts ?? topVulnerable,
+      resilienceIndex: superAdminApiData?.overview?.climateHealthResilienceIndex ?? resilienceIndex,
+      resourceQueue: superAdminApiData?.optimization?.optimizedRecommendations ?? resourceQueue,
+      trendCorrelations: {
+        rainfall_vs_mosquito: superAdminApiData?.trends?.correlations?.rainfallVsMosquitoRisk ?? correlation(rainMosquito, "rain", "mosquito"),
+        heat_vs_absenteeism: superAdminApiData?.trends?.correlations?.heatwaveVsAbsenteeism ?? correlation(heatAbsence, "heat", "absent"),
+        aqi_vs_respiratory: superAdminApiData?.trends?.correlations?.aqiVsRespiratoryComplaints ?? correlation(aqiResp, "aqi", "resp"),
+      },
+      projectedRiskReduction, projectedHeatReduction,
+      policyNotice: "Preventive intelligence only. This report supports governance planning and does not diagnose disease."
+    });
+  };
+  return (
+    <div>
+      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "10px 12px", marginBottom: "16px" }}>
+        <p style={{ color: "#1e3a8a", fontWeight: 800, fontSize: "12px" }}>National Climate Health Command Center</p>
+        <p style={{ color: "#1e40af", fontSize: "11px" }}>Multi-district preventive intelligence for policy action. Not a diagnosis system.</p>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        <StatCard icon={Shield} label="Low Risk Districts" value={`${Math.round(Number(superAdminApiData?.overview?.riskDistribution?.lowPct ?? lowPct))}%`} color="#16a34a" />
+        <StatCard icon={AlertCircle} label="Moderate Risk Districts" value={`${Math.round(Number(superAdminApiData?.overview?.riskDistribution?.moderatePct ?? moderatePct))}%`} color="#d97706" />
+        <StatCard icon={AlertTriangle} label="High Risk Districts" value={`${Math.round(Number(superAdminApiData?.overview?.riskDistribution?.highPct ?? highPct))}%`} color="#dc2626" />
+        <StatCard icon={Activity} label="Outbreak Signals" value={crossDistrictOutbreakFlag ? "Flagged" : "Stable"} color={crossDistrictOutbreakFlag ? "#dc2626" : "#16a34a"} />
+        <StatCard icon={Thermometer} label="Heatwave Impact Index" value={`${Math.min(100, Math.round(avgTemperature * 2 + heatAlertDays * 4))}/100`} color="#ef4444" />
+        <StatCard icon={Wind} label="AQI Impact Trend" value={`${Math.round(avgAqi)}`} color={avgAqi >= 160 ? "#dc2626" : "#d97706"} />
+        <StatCard icon={Award} label="Climate Health Resilience Index" value={`${Math.round(Number(superAdminApiData?.overview?.climateHealthResilienceIndex ?? resilienceIndex))}/100`} color="#1d4ed8" />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="National / State Risk Overview">
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={climateTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: th.textMuted }} />
+              <YAxis tick={{ fontSize: 10, fill: th.textMuted }} />
+              <Tooltip />
+              <Line dataKey="risk" stroke="#2563eb" name="Climate Risk Trend" strokeWidth={2} />
+              <Line dataKey="heatImpact" stroke="#ef4444" name="Heatwave Impact" strokeWidth={2} />
+              <Line dataKey="aqiImpact" stroke="#f59e0b" name="AQI Impact" strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+        <Card title="Top 10 Vulnerable Districts">
+          {(superAdminApiData?.overview?.topVulnerableDistricts || topVulnerable).map((item, idx) => (
+            <div key={item.district} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${th.cardBorder}`, padding: "7px 0" }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{idx + 1}. {item.district}</p>
+              <Badge color={item.score < 70 ? "red" : item.score < 82 ? "yellow" : "green"}>{item.score.toFixed(1)}</Badge>
+            </div>
+          ))}
+        </Card>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Advanced Geo Intelligence Map">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px" }}>
+            {geoClusters.map((zone) => (
+              <button key={zone.district} onClick={() => setSelectedZone(zone.district)} style={{ textAlign: "left", border: `1px solid ${selectedZone === zone.district ? "#2563eb" : th.cardBorder}`, background: selectedZone === zone.district ? "#dbeafe" : darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px", padding: "8px", cursor: "pointer" }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{zone.district}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>{zone.type}</p>
+                <p style={{ color: "#dc2626", fontSize: "11px" }}>Severity {zone.severity}/100</p>
+              </button>
+            ))}
+          </div>
+          <p style={{ color: th.textMuted, fontSize: "11px", marginTop: "8px" }}>Selected zone: {selectedZone} (K-Means/DBSCAN style geospatial clustering view)</p>
+        </Card>
+        <Card title="Early Outbreak Signal Engine">
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>Attendance anomalies: {outbreakSignals.attendanceSignals.classAlerts.length}</p>
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>Fever/symptom clusters: {outbreakSignals.symptomClusters.length}</p>
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>Environmental spikes: {avgTemperature >= 38 || avgAqi >= 160 ? "Present" : "Mild"}</p>
+          <Badge color={crossDistrictOutbreakFlag ? "red" : "green"}>{crossDistrictOutbreakFlag ? "Potential regional outbreak signal detected" : "No regional multi-district signal"}</Badge>
+        </Card>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Resource Allocation Optimization">
+          {(superAdminApiData?.optimization?.optimizedRecommendations || resourceQueue).map((item, idx) => (
+            <div key={`${item.district || item.blockName || "zone"}-${idx}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px", marginBottom: "8px" }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>
+                {(item.recommendation || item.actionType || "Preventive action")} - {(item.district || item.blockName || "Priority Zone")}
+              </p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>
+                Priority {Math.round(Number(item.priorityScore || 0))}/100
+                {item.severity ? ` | severity ${item.severity}` : ""}
+                {item.populationLoad ? ` | population ${item.populationLoad}` : ""}
+                {item.historical ? ` | historical ${item.historical}` : ""}
+                {item.inspectionGap ? ` | inspection gap ${item.inspectionGap}` : ""}
+              </p>
+            </div>
+          ))}
+        </Card>
+        <Card title="Climate Impact Trend Analysis">
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>Rainfall vs mosquito risk: r={correlation(rainMosquito, "rain", "mosquito")}</p>
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>Heatwave vs absenteeism: r={correlation(heatAbsence, "heat", "absent")}</p>
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "6px" }}>AQI vs respiratory complaints: r={correlation(aqiResp, "aqi", "resp")}</p>
+          <p style={{ color: th.textMuted, fontSize: "11px" }}>Correlation + regression style trend intelligence for policy guidance.</p>
+        </Card>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Policy Simulation Engine">
+          <label style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>Water quality improvement in districts: {waterImprove}%</label>
+          <input type="range" min="0" max="30" value={waterImprove} onChange={(e) => setWaterImprove(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+          <label style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginTop: "8px", display: "block" }}>Tree cover increase: {treeCoverImprove}%</label>
+          <input type="range" min="0" max="30" value={treeCoverImprove} onChange={(e) => setTreeCoverImprove(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+          <p style={{ color: th.text, fontSize: "12px", marginTop: "8px" }}>Projected disease risk reduction: <strong>{projectedRiskReduction}%</strong></p>
+          <p style={{ color: th.text, fontSize: "12px" }}>Projected heat risk reduction: <strong>{projectedHeatReduction}%</strong></p>
+        </Card>
+        <Card title="Sustainability & Compliance Report">
+          <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "8px" }}>Auto-generates district compliance ranking, environmental trends, risk reduction, and resilience growth index.</p>
+          <Button icon={Download} onClick={downloadNationalReport}>Download Policy Report</Button>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+const HealthWorkerDashboard = () => {
+  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students, sickLeaveReports = [], sendSMS, generateReport } = useApp();
+  const th = theme[darkMode ? "dark" : "light"];
+  const [inspectionNote, setInspectionNote] = useState("");
+  const [selectedSchool, setSelectedSchool] = useState("");
+  const [selectedAction, setSelectedAction] = useState("spray");
+  const [selectedFileName, setSelectedFileName] = useState("");
+  const [inspectionLog, setInspectionLog] = useState([]);
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 34);
+  const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 0);
+  const nearbyRiskFeed = (Array.isArray(districtRanking) ? districtRanking : districtData)
+    .map((item, idx) => {
+      const score = Number(item?.score ?? 70);
+      const proximityKm = Number((1.5 + idx * 1.2).toFixed(1));
+      const riskType =
+        score < 72 ? "Water contamination" :
+          score < 78 ? "Mosquito surge" :
+            avgTemperature >= 38 ? "Heat alert" :
+              avgAqi >= 150 ? "Air quality spike" : "Mixed risk";
+      const severity = Math.max(10, Math.min(100, Math.round((100 - score) * 0.6 + (avgAqi / 10) * 0.15 + heatAlertDays * 1.2 + outbreakSignals.symptomClusters.length * 2)));
+      const geoPriority = Math.max(1, Math.round(severity - proximityKm * 4));
+      return {
+        school: String(item?.school || `School ${idx + 1}`),
+        score,
+        riskType,
+        proximityKm,
+        severity,
+        geoPriority
+      };
+    })
+    .sort((a, b) => b.geoPriority - a.geoPriority)
+    .slice(0, 8);
+  const symptomWatch = outbreakSignals.symptomClusters
+    .slice(0, 8)
+    .map((cluster) => {
+      const symptom = String(cluster?.symptom || "").toLowerCase();
+      const riskFlag =
+        ["diarrhea", "vomiting", "jaundice", "stomach pain", "loose motion"].includes(symptom) ? "Possible water-borne cluster detected" :
+          ["fever", "rash", "body pain", "chills"].includes(symptom) ? "Possible vector-borne cluster detected" :
+            ["cough", "breathlessness", "wheezing"].includes(symptom) ? "Possible respiratory cluster detected" :
+              "General symptom cluster";
+      return {
+        className: cluster.className,
+        symptom: cluster.symptom,
+        count: cluster.count,
+        riskFlag
+      };
+    });
+  const topRiskType = nearbyRiskFeed[0]?.riskType || "Mixed risk";
+  const responseRecommendations = {
+    "Water contamination": ["Conduct water sample test", "Inspect storage tanks and chlorination", "Run handwashing awareness session"],
+    "Mosquito surge": ["Initiate anti-larval spray", "Remove stagnant water in and around campus", "Issue mosquito-bite prevention advisory"],
+    "Heat alert": ["Issue hydration advisory", "Reschedule outdoor activities", "Set up temporary cooling/shade points"],
+    "Air quality spike": ["Temporary class relocation indoors", "Pause outdoor drills", "Activate mask/clean-air protocol"],
+    "Mixed risk": ["Run rapid screening camp", "Request sanitation inspection", "Issue parent precaution notice"]
+  };
+  const heatmapGrid = nearbyRiskFeed.map((item, idx) => ({
+    zone: `Zone-${idx + 1}`,
+    school: item.school,
+    risk: item.geoPriority >= 75 ? "High" : item.geoPriority >= 55 ? "Moderate" : "Watch",
+    vulnerability: Math.max(20, Math.min(100, Math.round(item.severity * 0.7 + (100 - item.score) * 0.3)))
+  }));
+  const imageValidationTag = (() => {
+    const name = selectedFileName.toLowerCase();
+    if (!name) return "No image uploaded";
+    if (name.includes("stagnant") || name.includes("water")) return "AI flag: potential stagnant water";
+    if (name.includes("garbage") || name.includes("waste") || name.includes("trash")) return "AI flag: garbage accumulation";
+    return "AI validation: no obvious hazard keyword (manual review needed)";
+  })();
+  const submitInspection = () => {
+    if (!selectedSchool) return;
+    const entry = {
+      id: `inspection-${Date.now()}`,
+      school: selectedSchool,
+      note: inspectionNote || "Field note added",
+      action: selectedAction,
+      imageValidation: imageValidationTag,
+      createdAt: new Date().toISOString()
+    };
+    setInspectionLog((prev) => [entry, ...prev].slice(0, 12));
+    setInspectionNote("");
+    setSelectedFileName("");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "16px", marginBottom: "16px" }}>
+        <StatCard icon={MapPin} label="High-Risk Nearby Schools" value={nearbyRiskFeed.filter((x) => x.geoPriority >= 70).length} color="#dc2626" />
+        <StatCard icon={AlertCircle} label="Symptom Cluster Alerts" value={symptomWatch.length} color="#d97706" />
+        <StatCard icon={Clock} label="Heat Alert Days" value={heatAlertDays} color="#ef4444" />
+        <StatCard icon={Wind} label="AQI Watch" value={Math.round(avgAqi)} color={avgAqi >= 160 ? "#dc2626" : "#f59e0b"} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="School Risk Alert Feed (Geo-Prioritized)">
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {nearbyRiskFeed.map((item) => (
+              <div key={item.school} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px", background: darkMode ? "#0f172a" : "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <div>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.school}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{item.riskType} • {item.proximityKm} km • severity {item.severity}/100</p>
+                </div>
+                <Badge color={item.geoPriority >= 75 ? "red" : item.geoPriority >= 55 ? "yellow" : "green"}>
+                  P{item.geoPriority}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Rapid Response Recommendation">
+          <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>
+            Top risk type: <strong style={{ color: th.text }}>{topRiskType}</strong>
+          </p>
+          {(responseRecommendations[topRiskType] || responseRecommendations["Mixed risk"]).map((item) => (
+            <div key={item} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px", marginBottom: "6px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <p style={{ color: th.text, fontSize: "12px" }}>{item}</p>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <Card title="Field Inspection Mode">
+          <select value={selectedSchool} onChange={(e) => setSelectedSchool(e.target.value)} style={{ width: "100%", marginBottom: "8px", padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }}>
+            <option value="">Select school</option>
+            {nearbyRiskFeed.map((item) => <option key={item.school} value={item.school}>{item.school}</option>)}
+          </select>
+          <textarea value={inspectionNote} onChange={(e) => setInspectionNote(e.target.value)} placeholder="Add verification notes..." style={{ width: "100%", minHeight: "90px", padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px", marginBottom: "8px" }} />
+          <select value={selectedAction} onChange={(e) => setSelectedAction(e.target.value)} style={{ width: "100%", marginBottom: "8px", padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }}>
+            <option value="spray">Action taken: anti-larval spray</option>
+            <option value="water_test">Action taken: water test initiated</option>
+            <option value="awareness">Action taken: awareness session</option>
+            <option value="verified_only">Issue verified only</option>
+          </select>
+          <input type="file" accept="image/*" onChange={(e) => setSelectedFileName(e.target.files?.[0]?.name || "")} style={{ marginBottom: "8px", fontSize: "12px" }} />
+          <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>{imageValidationTag}</p>
+          <Button variant="danger" onClick={submitInspection}>Save Field Update</Button>
+        </Card>
+
+        <Card title="Symptom Cluster Monitoring">
+          {symptomWatch.map((item, idx) => (
+            <div key={`${item.className}-${item.symptom}-${idx}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px", marginBottom: "6px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.className} • {item.symptom} ({item.count})</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>{item.riskFlag}</p>
+            </div>
+          ))}
+          {symptomWatch.length === 0 && <p style={{ color: th.textMuted, fontSize: "12px" }}>No active cluster signal right now.</p>}
+        </Card>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        <Card title="Disease Trend Heatmap (Local Area)">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {heatmapGrid.map((item) => (
+              <div key={item.zone} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px", background: item.risk === "High" ? "#fee2e2" : item.risk === "Moderate" ? "#fef3c7" : (darkMode ? "#0f172a" : "#f8fafc") }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.zone}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>{item.school}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>Risk: {item.risk} • Vulnerability: {item.vulnerability}/100</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Report Back to District">
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <Button
+              variant="secondary"
+              onClick={() => generateReport("health-worker-inspection-summary.json", {
+                generatedAt: new Date().toISOString(),
+                nearbyRiskFeed,
+                inspectionLog,
+                symptomWatch,
+                topRiskType
+              })}
+            >
+              Generate Inspection Summary
+            </Button>
+            <Button
+              variant="success"
+              onClick={() => generateReport("health-worker-action-taken-report.json", {
+                generatedAt: new Date().toISOString(),
+                actionsTaken: inspectionLog,
+                riskStatus: nearbyRiskFeed.slice(0, 5),
+                rapidResponse: responseRecommendations[topRiskType] || []
+              })}
+            >
+              Generate Action Taken Report
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => sendSMS("919999999999", `Health worker district update: ${nearbyRiskFeed[0]?.school || "School"} marked ${topRiskType} risk. Immediate field response logged in system.`)}
+            >
+              Send District Alert
+            </Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -1857,7 +2678,7 @@ const StudentProfile = ({ student: s, onBack }) => {
     <div>
       {/* Back */}
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: "6px", background: "none", border: "none", color: th.accent, cursor: "pointer", fontWeight: 600, fontSize: "13px", marginBottom: "16px" }}>
-        ← Back to Students
+        ? Back to Students
       </button>
 
       {/* Profile Header — CoWIN/Ayushman style */}
@@ -1893,11 +2714,11 @@ const StudentProfile = ({ student: s, onBack }) => {
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <div style={{ background: s.ayushmanCard ? "#16a34a" : "#6b7280", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
               <p style={{ color: "#fff", fontSize: "10px", fontWeight: 700 }}>AYUSHMAN BHARAT</p>
-              <p style={{ color: s.ayushmanCard ? "#bbf7d0" : "#d1d5db", fontSize: "10px" }}>{s.ayushmanCard ? "✓ Enrolled" : "Not Enrolled"}</p>
+              <p style={{ color: s.ayushmanCard ? "#bbf7d0" : "#d1d5db", fontSize: "10px" }}>{s.ayushmanCard ? "? Enrolled" : "Not Enrolled"}</p>
             </div>
             <div style={{ background: s.midDayMeal ? "#2563eb" : "#6b7280", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
               <p style={{ color: "#fff", fontSize: "10px", fontWeight: 700 }}>MID DAY MEAL</p>
-              <p style={{ color: s.midDayMeal ? "#bfdbfe" : "#d1d5db", fontSize: "10px" }}>{s.midDayMeal ? "✓ Active" : "Inactive"}</p>
+              <p style={{ color: s.midDayMeal ? "#bfdbfe" : "#d1d5db", fontSize: "10px" }}>{s.midDayMeal ? "? Active" : "Inactive"}</p>
             </div>
           </div>
         </div>
@@ -1954,7 +2775,7 @@ const StudentProfile = ({ student: s, onBack }) => {
             {["BCG", "OPV", "DPT", "Hepatitis B", "MMR", "Typhoid", "Vitamin A"].map((v, i) => (
               <div key={v} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "6px" }}>
                 <span style={{ color: th.text, fontSize: "13px" }}>{v}</span>
-                <Badge color={i < 5 ? "green" : "yellow"}>{i < 5 ? "✓ Done" : "Pending"}</Badge>
+                <Badge color={i < 5 ? "green" : "yellow"}>{i < 5 ? "? Done" : "Pending"}</Badge>
               </div>
             ))}
           </div>
@@ -2311,11 +3132,11 @@ const SchemesPage = () => {
   const vaccinationGap = studentsData.filter((student) => !student.vaccinated).length;
 
   const schemes = [
-    { name: "Midday Meal Scheme (PM POSHAN)", icon: "🍱", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
-    { name: "Rashtriya Bal Swasthya Karyakram", icon: "🏥", color: "#3b82f6", eligible: 98, covered: 72, missing: 26, missingDocs: ["Birth Certificate", "Health Card"] },
-    { name: "Ayushman Bharat (PM-JAY)", icon: "💊", color: "#7c3aed", eligible: 85, covered: 61, missing: 24, missingDocs: ["BPL Certificate", "Ration Card"] },
-    { name: "Pradhan Mantri Bhartiya Janaushadhi Pariyojana", icon: "💉", color: "#0ea5a4", eligible: 100, covered: 64, missing: 36, missingDocs: ["Aadhaar Card", "Mobile Number"] },
-    { name: "National Scholarship Portal", icon: "📚", color: "#16a34a", eligible: 45, covered: 38, missing: 7, missingDocs: ["Bank Account", "Mark Sheet"] },
+    { name: "Midday Meal Scheme (PM POSHAN)", icon: "??", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
+    { name: "Rashtriya Bal Swasthya Karyakram", icon: "??", color: "#3b82f6", eligible: 98, covered: 72, missing: 26, missingDocs: ["Birth Certificate", "Health Card"] },
+    { name: "Ayushman Bharat (PM-JAY)", icon: "??", color: "#7c3aed", eligible: 85, covered: 61, missing: 24, missingDocs: ["BPL Certificate", "Ration Card"] },
+    { name: "Pradhan Mantri Bhartiya Janaushadhi Pariyojana", icon: "??", color: "#0ea5a4", eligible: 100, covered: 64, missing: 36, missingDocs: ["Aadhaar Card", "Mobile Number"] },
+    { name: "National Scholarship Portal", icon: "??", color: "#16a34a", eligible: 45, covered: 38, missing: 7, missingDocs: ["Bank Account", "Mark Sheet"] },
   ];
 
   return (
@@ -2444,7 +3265,7 @@ const ClimatePage = () => {
       <div style={{ background: "linear-gradient(135deg, #14532d 0%, #166534 60%, #15803d 100%)", borderRadius: "16px", padding: "24px", marginBottom: "24px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <p style={{ color: "#86efac", fontSize: "11px", letterSpacing: "0.08em", marginBottom: "4px" }}>🌿 SCHOOL ENVIRONMENTAL SCORE — AI GENERATED</p>
+            <p style={{ color: "#86efac", fontSize: "11px", letterSpacing: "0.08em", marginBottom: "4px" }}>?? SCHOOL ENVIRONMENTAL SCORE — AI GENERATED</p>
             <p style={{ color: "#fff", fontSize: "48px", fontWeight: 800, lineHeight: 1 }}>{cd.envScore}<span style={{ fontSize: "20px", color: "#86efac" }}>/100</span></p>
             <p style={{ color: "#86efac", fontSize: "13px", marginTop: "6px" }}>Good — Above District Average (62)</p>
           </div>
@@ -2455,7 +3276,7 @@ const ClimatePage = () => {
               { label: "AQI", value: Math.round(avgAqi), color: avgAqi >= 200 ? "#ef4444" : avgAqi >= 120 ? "#f59e0b" : "#22c55e", icon: Wind },
               { label: "Air Quality", value: airQualityGrade, color: avgAqi >= 150 ? "#ef4444" : avgAqi >= 100 ? "#f59e0b" : "#22c55e", icon: Wind },
               { label: "Water Quality", value: `${cd.waterQuality}/100`, color: "#22c55e", icon: Droplets },
-              { label: "Carbon Footprint", value: `${cd.carbonFootprint} tCO₂`, color: "#f59e0b", icon: Wind },
+              { label: "Carbon Footprint", value: `${cd.carbonFootprint} tCO2`, color: "#f59e0b", icon: Wind },
               { label: "Trees Planted", value: cd.treesPlanted, color: "#22c55e", icon: TreePine },
             ].map(item => (
               <div key={item.label} style={{ background: "rgba(255,255,255,0.12)", borderRadius: "8px", padding: "12px", minWidth: "120px" }}>
@@ -2837,7 +3658,7 @@ const AlertsPage = () => {
       <div style={{ background: "linear-gradient(135deg, #dc2626, #7f1d1d)", borderRadius: "16px", padding: "20px 24px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "16px" }}>
         <AlertTriangle size={32} color="#fff" />
         <div>
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: "18px" }}>🚨 Emergency Health Alerts</p>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: "18px" }}>?? Emergency Health Alerts</p>
           <p style={{ color: "#fecaca", fontSize: "13px" }}>
             {isParentView ? "Child safety and class spread alerts" : `${highRisk.length} students require immediate attention`}
           </p>
@@ -2845,10 +3666,10 @@ const AlertsPage = () => {
         {!isParentView && (
           <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
             <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-              📞 Notify All Parents
+              ?? Notify All Parents
             </button>
             <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, attendanceSignals, symptomClusters, likelyDiseaseFamily: outbreakSignals.likelyDiseaseFamily, spreadRisk: outbreakSignals.spreadLevel, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
-              📋 Generate Report
+              ?? Generate Report
             </button>
           </div>
         )}
@@ -3070,7 +3891,7 @@ const AlertsPage = () => {
                   fontWeight: 600
                 }}
               >
-                {responseChecklist[item.key] ? "✓" : "○"} {item.label}
+                {responseChecklist[item.key] ? "?" : "?"} {item.label}
               </button>
             ))}
           </div>
@@ -3166,7 +3987,7 @@ const AlertsPage = () => {
               </div>
               <div style={{ background: "#fef9c3", borderRadius: "8px", padding: "6px 12px", textAlign: "center" }}>
                 <p style={{ color: "#a16207", fontSize: "9px", fontWeight: 700 }}>SMS STATUS</p>
-                <p style={{ color: "#a16207", fontSize: "11px", fontWeight: 600 }}>✓ Sent</p>
+                <p style={{ color: "#a16207", fontSize: "11px", fontWeight: 600 }}>? Sent</p>
               </div>
               <button onClick={() => callParent(s.parentPhone, s.name)} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: "12px", display: "flex", alignItems: "center", gap: "5px" }}>
                 <Phone size={13} /> Call Parent
@@ -3394,10 +4215,10 @@ const AppContent = () => {
   const th = theme[darkMode ? "dark" : "light"];
 
   const dashboardComponent = {
-    [ROLES.SUPER_ADMIN]: <SuperAdminDashboard />,
+    [ROLES.SUPER_ADMIN]: <SuperAdminCommandCenter />,
     [ROLES.SCHOOL_ADMIN]: <SchoolAdminDashboard />,
     [ROLES.TEACHER]: <TeacherDashboard />,
-    [ROLES.HEALTH_WORKER]: <SuperAdminDashboard />,
+    [ROLES.HEALTH_WORKER]: <HealthWorkerDashboard />,
     [ROLES.PARENT]: <ParentDashboard />,
   };
 
@@ -3422,7 +4243,7 @@ const AppContent = () => {
           <div style={{ marginBottom: "20px" }}>
             <h1 style={{ color: th.text, fontSize: "20px", fontWeight: 800, textTransform: "capitalize" }}>
               {activePage === "dashboard"
-                ? `Welcome, ${user.name.split(" ")[0]} 👋`
+                ? `Welcome, ${user.name.split(" ")[0]} ??`
                 : activePage.replace(/-/g, " ")}
             </h1>
             {activePage === "dashboard" && (
@@ -3767,6 +4588,16 @@ export default function SwasthyaSetu() {
     URL.revokeObjectURL(url);
   }, []);
 
+  const districtAdminRequest = useCallback(
+    async (path, options = {}) => {
+      if (!token) {
+        throw new Error("Authentication required");
+      }
+      return apiRequest(path, { ...options, token });
+    },
+    [token]
+  );
+
   const logSickLeaveReport = useCallback((report) => {
     if (!report) return;
     setSickLeaveReports((prev) => [report, ...prev].slice(0, 300));
@@ -3839,6 +4670,8 @@ export default function SwasthyaSetu() {
         callParent,
         sendSMS,
         generateReport,
+        districtAdminRequest,
+        apiBaseUrl: API_BASE_URL,
       }}
     >
       <style>{`
@@ -3853,3 +4686,6 @@ export default function SwasthyaSetu() {
     </AppContext.Provider>
   );
 }
+
+
+

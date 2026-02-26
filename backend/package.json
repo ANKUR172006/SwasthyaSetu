@@ -15,13 +15,13 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "node prisma/seed.js",
+    "prisma:seed": "ts-node prisma/seed.ts",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:smoke": "node ./scripts/smoke-test.mjs"
   },
   "prisma": {
-    "seed": "node prisma/seed.js"
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
