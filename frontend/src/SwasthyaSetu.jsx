@@ -579,6 +579,38 @@ const generateStudents = () => {
 };
 
 const students = generateStudents();
+const createDemoSickLeaveReports = (studentList = []) => {
+  const now = Date.now();
+  const hoursAgoIso = (hours) => new Date(now - hours * 60 * 60 * 1000).toISOString();
+  const pickStudent = (className, fallbackIndex) =>
+    studentList.find((item) => String(item?.class || "") === className) || studentList[fallbackIndex] || studentList[0];
+  const makeReport = ({ id, className, hoursAgo, reason, symptoms, studentFallbackIndex = 0 }) => {
+    const student = pickStudent(className, studentFallbackIndex);
+    return {
+      id: `seed-${id}`,
+      studentId: String(student?.id || `STU-SEED-${id}`),
+      studentName: String(student?.name || `Seed Student ${id}`),
+      className: String(student?.class || className || "Class 6"),
+      leaveType: "SICK",
+      reason,
+      symptoms,
+      date: hoursAgoIso(hoursAgo).slice(0, 10),
+      reportedAt: hoursAgoIso(hoursAgo),
+    };
+  };
+  return [
+    makeReport({ id: 1, className: "Class 6", hoursAgo: 10, reason: "high fever and weakness", symptoms: "fever, headache, body pain", studentFallbackIndex: 5 }),
+    makeReport({ id: 2, className: "Class 6", hoursAgo: 18, reason: "vomiting with fever", symptoms: "fever, vomiting, body pain", studentFallbackIndex: 6 }),
+    makeReport({ id: 3, className: "Class 6", hoursAgo: 28, reason: "suspected dengue", symptoms: "fever, rash, headache", studentFallbackIndex: 7 }),
+    makeReport({ id: 4, className: "Class 7", hoursAgo: 14, reason: "stomach infection", symptoms: "diarrhea, stomach pain, vomiting", studentFallbackIndex: 8 }),
+    makeReport({ id: 5, className: "Class 7", hoursAgo: 32, reason: "loose motions", symptoms: "diarrhea, nausea, dehydration", studentFallbackIndex: 9 }),
+    makeReport({ id: 6, className: "Class 8", hoursAgo: 16, reason: "breathing issue in pollution", symptoms: "cough, breathlessness, wheezing", studentFallbackIndex: 10 }),
+    makeReport({ id: 7, className: "Class 8", hoursAgo: 40, reason: "persistent cough", symptoms: "cough, sore throat, fever", studentFallbackIndex: 11 }),
+    makeReport({ id: 8, className: "Class 5", hoursAgo: 8, reason: "heat exhaustion", symptoms: "dehydration, dizziness, headache", studentFallbackIndex: 12 }),
+    makeReport({ id: 9, className: "Class 5", hoursAgo: 30, reason: "fainting after heat", symptoms: "weakness, dizziness, vomiting", studentFallbackIndex: 13 }),
+  ];
+};
+const demoSickLeaveReports = createDemoSickLeaveReports(students);
 
 const mapBackendStudent = (student, idx = 0) => {
   const riskScore = riskLabelFromScore(Number(student.riskScore ?? 0));
@@ -3423,7 +3455,7 @@ export default function SwasthyaSetu() {
   const [districtClimateRisk, setDistrictClimateRisk] = useState(null);
   const [climateMetrics, setClimateMetrics] = useState(climateData);
   const [genAiSchoolSummary, setGenAiSchoolSummary] = useState("");
-  const [sickLeaveReports, setSickLeaveReports] = useState([]);
+  const [sickLeaveReports, setSickLeaveReports] = useState(demoSickLeaveReports);
   const [operationalEvents, setOperationalEvents] = useState([]);
 
   const refreshGenAiSchoolSummary = useCallback(async () => {
