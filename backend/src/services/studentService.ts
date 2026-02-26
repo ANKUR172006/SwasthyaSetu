@@ -3,6 +3,7 @@ import { ApiError } from "../utils/apiError";
 import { calculateRisk } from "../ai-service-client/riskClient";
 import { invalidateSchoolCache } from "./schoolService";
 import { mapRiskToActions, RiskLevel } from "./riskActionEngine";
+import { inferLikelyConditions } from "./diseaseInference";
 
 const bmi = (heightCm: number, weightKg: number): number => {
   const heightM = heightCm / 100;
@@ -54,11 +55,18 @@ const withRiskExplanation = <T extends { bmi: number; vaccinationStatus: string;
   student: T
 ) => {
   const reasonCodes = buildReasonCodes(student);
+  const conditionSignals = inferLikelyConditions({
+    bmi: student.bmi,
+    vaccinationStatus: student.vaccinationStatus,
+    attendanceRatio: student.attendanceRatio
+  });
   return {
     ...student,
     riskExplanation: {
-      model_version: "risk-explain-v1",
+      model_version: "risk-explain-v2",
       reason_codes: reasonCodes,
+      likely_condition: conditionSignals.primary_condition,
+      condition_signals: conditionSignals,
       recommended_actions: mapRiskToActions({
         riskLevel: scoreToRiskLevel(student.riskScore),
         reasonCodes

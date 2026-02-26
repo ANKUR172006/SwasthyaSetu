@@ -35,6 +35,8 @@ describe("Risk client", () => {
     expect(result.level).toBe("MEDIUM");
     expect(result.source).toBe("ai-service");
     expect(result.model_version).toBe("risk-engine-rule-v2");
+    expect(result.condition_signals.primary_condition).toBeDefined();
+    expect(result.condition_signals.likely_conditions.length).toBeGreaterThan(0);
   });
 
   it("uses fallback scoring when AI service is unavailable", async () => {
@@ -53,5 +55,8 @@ describe("Risk client", () => {
     expect(result.reason_codes.length).toBeGreaterThan(0);
     expect(result.score).toBeGreaterThanOrEqual(0);
     expect(result.score).toBeLessThanOrEqual(1);
+    expect(result.condition_signals.primary_condition).toBeDefined();
+    expect(result.condition_signals.triage_score).toBeGreaterThanOrEqual(0);
+    expect(result.condition_signals.triage_score).toBeLessThanOrEqual(1);
   });
 });

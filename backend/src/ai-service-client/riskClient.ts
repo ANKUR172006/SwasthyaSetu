@@ -3,6 +3,7 @@ import { env } from "../config/env";
 import { logger } from "../config/logger";
 import { recordRiskSource } from "../services/riskTelemetry";
 import { mapRiskToActions } from "../services/riskActionEngine";
+import { DiseaseInferenceResult, inferLikelyConditions } from "../services/diseaseInference";
 
 export interface RiskInput {
   bmi: number;
@@ -25,6 +26,7 @@ export interface RiskResponse {
     aqi: number;
     attendance: number;
   };
+  condition_signals: DiseaseInferenceResult;
   source: "ai-service" | "fallback";
 }
 
@@ -102,6 +104,13 @@ const fallbackRiskScore = (payload: RiskInput): RiskResponse => {
   );
   const reasonCodes = buildReasonCodes(contributions);
   const level = scoreLevel(score);
+  const conditionSignals = inferLikelyConditions({
+    bmi: payload.bmi,
+    vaccinationStatus: payload.vaccination_status,
+    attendanceRatio: payload.attendance_ratio,
+    temperature: payload.temperature,
+    aqi: payload.aqi
+  });
 
   return {
     score,
@@ -113,6 +122,7 @@ const fallbackRiskScore = (payload: RiskInput): RiskResponse => {
       reasonCodes
     }),
     contributions,
+    condition_signals: conditionSignals,
     source: "fallback"
   };
 };
@@ -141,6 +151,15 @@ export const calculateRisk = async (payload: RiskInput): Promise<RiskResponse> =
         aqi: 0,
         attendance: 0
       },
+      condition_signals:
+        data.condition_signals ??
+        inferLikelyConditions({
+          bmi: payload.bmi,
+          vaccinationStatus: payload.vaccination_status,
+          attendanceRatio: payload.attendance_ratio,
+          temperature: payload.temperature,
+          aqi: payload.aqi
+        }),
       source: "ai-service"
     };
     recordRiskSource("ai-service");

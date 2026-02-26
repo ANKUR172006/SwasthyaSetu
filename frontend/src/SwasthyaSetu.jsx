@@ -398,6 +398,114 @@ const buildScoreDomain = (ranking) => {
   return [Math.max(0, Math.floor(min - 2)), Math.min(100, Math.ceil(max + 2))];
 };
 
+const buildAttendanceSignals = (studentList) => {
+  const normalized = Array.isArray(studentList) ? studentList : [];
+  const chronic = normalized
+    .filter((student) => Number(student?.attendance || 0) < 75)
+    .sort((a, b) => Number(a.attendance || 0) - Number(b.attendance || 0));
+
+  const classMap = new Map();
+  normalized.forEach((student) => {
+    const className = String(student?.class || "Class NA");
+    const current = classMap.get(className) || { total: 0, lowCount: 0, count: 0 };
+    const attendance = Number(student?.attendance || 0);
+    current.total += attendance;
+    current.count += 1;
+    if (attendance < 80) current.lowCount += 1;
+    classMap.set(className, current);
+  });
+
+  const classAlerts = [...classMap.entries()]
+    .map(([className, value]) => ({
+      className,
+      avgAttendance: Math.round(value.total / Math.max(1, value.count)),
+      lowAttendanceStudents: value.lowCount,
+      students: value.count
+    }))
+    .filter((item) => item.avgAttendance < 82 || item.lowAttendanceStudents >= 3)
+    .sort((a, b) => a.avgAttendance - b.avgAttendance);
+
+  const overallAverage = normalized.length
+    ? Math.round(normalized.reduce((sum, student) => sum + Number(student?.attendance || 0), 0) / normalized.length)
+    : 0;
+
+  return {
+    chronicAbsentees: chronic,
+    classAlerts,
+    overallAverage
+  };
+};
+
+const parseSymptomList = (text) =>
+  String(text || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+const buildSymptomClusterSignals = (reports, lookbackDays = 3) => {
+  const now = Date.now();
+  const windowMs = lookbackDays * 24 * 60 * 60 * 1000;
+  const recent = (Array.isArray(reports) ? reports : []).filter((item) => {
+    if (String(item?.leaveType || "").toUpperCase() !== "SICK") return false;
+    const ts = new Date(item?.reportedAt || item?.date || 0).getTime();
+    return Number.isFinite(ts) && now - ts <= windowMs;
+  });
+
+  const clusterMap = new Map();
+  recent.forEach((report) => {
+    const className = String(report?.className || "Unknown Class");
+    parseSymptomList(report?.symptoms).forEach((symptom) => {
+      const key = `${className}::${symptom}`;
+      const current = clusterMap.get(key) || { className, symptom, count: 0, students: [] };
+      current.count += 1;
+      current.students.push(report.studentName || report.studentId || "Student");
+      clusterMap.set(key, current);
+    });
+  });
+
+  return [...clusterMap.values()]
+    .filter((entry) => entry.count >= 2)
+    .sort((a, b) => b.count - a.count);
+};
+
+const buildOutbreakSignals = (studentsData, sickLeaveReports) => {
+  const attendanceSignals = buildAttendanceSignals(studentsData);
+  const symptomClusters = buildSymptomClusterSignals(sickLeaveReports, 3);
+  const highRisk = (Array.isArray(studentsData) ? studentsData : []).filter((student) => student.riskScore === "High");
+  const highConcernSymptoms = new Set(["fever", "vomiting", "rash", "cough", "jaundice", "breathlessness"]);
+  const highConcernClusterCount = symptomClusters.filter((cluster) => highConcernSymptoms.has(String(cluster.symptom || "").toLowerCase())).length;
+  const triageScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        highRisk.length * 4 +
+          attendanceSignals.chronicAbsentees.length * 3 +
+          symptomClusters.length * 10 +
+          highConcernClusterCount * 8
+      )
+    )
+  );
+
+  const spreadLevel = triageScore >= 70 ? "High" : triageScore >= 40 ? "Medium" : "Low";
+  const likelyDiseaseFamily =
+    symptomClusters.find((cluster) => ["fever", "vomiting", "rash"].includes(String(cluster.symptom || "").toLowerCase()))
+      ? "Vector/Fever Cluster (Dengue-like)"
+      : symptomClusters.find((cluster) => ["cough", "breathlessness"].includes(String(cluster.symptom || "").toLowerCase()))
+        ? "Respiratory Cluster"
+        : symptomClusters.find((cluster) => ["jaundice"].includes(String(cluster.symptom || "").toLowerCase()))
+          ? "Water/Food-borne Cluster"
+          : "General Health Risk";
+
+  return {
+    attendanceSignals,
+    symptomClusters,
+    triageScore,
+    spreadLevel,
+    likelyDiseaseFamily
+  };
+};
+
 const toDisplaySchoolLabel = (name) => {
   const normalized = String(name || "Unknown School").trim();
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
@@ -464,6 +572,21 @@ const mapBackendStudent = (student, idx = 0) => {
   const reasonCodes = Array.isArray(student?.riskExplanation?.reason_codes)
     ? student.riskExplanation.reason_codes
     : [];
+  const conditionSignals = student?.riskExplanation?.condition_signals;
+  const likelyConditions = Array.isArray(conditionSignals?.likely_conditions)
+    ? conditionSignals.likely_conditions
+    : [];
+  const predictedConditionCode = String(
+    student?.riskExplanation?.likely_condition ||
+      conditionSignals?.primary_condition ||
+      (likelyConditions[0]?.condition || "")
+  );
+  const readableCondition = predictedConditionCode
+    .toLowerCase()
+    .split("_")
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ")
+    .replace(" Risk", "");
   const normalizedClass = normalizeClassLabel(student.className || student.class || "");
   const classSuffixMatch = String(student.className || student.class || "").trim().match(/[A-Za-z]$/);
   const section = classSuffixMatch ? classSuffixMatch[0].toUpperCase() : ["A", "B", "C"][idx % 3];
@@ -495,6 +618,8 @@ const mapBackendStudent = (student, idx = 0) => {
     address: "Ward-level school catchment, India",
     photoUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`,
     category: deriveStudentCategory({ riskScore, attendance, bmi: bmiValue, vaccinated }),
+    predictedCondition: readableCondition || "General Risk",
+    likelyConditions,
     recommendedActions,
     reasonCodes
   };
@@ -1012,7 +1137,7 @@ const Navbar = ({ collapsed, setCollapsed, activePage, setActivePage }) => {
 // ============================================================
 
 const SchoolAdminDashboard = () => {
-  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary } = useApp();
+  const { darkMode, studentsData = students, schemeCoverage = schemeData, climateMetrics = climateData, districtRanking = districtData, genAiSchoolSummary, refreshGenAiSchoolSummary, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
   const averageAttendance = studentsData.length
@@ -1033,6 +1158,7 @@ const SchoolAdminDashboard = () => {
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
   const schoolComparisonDomain = buildScoreDomain(schoolAdminComparison);
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
 
   return (
     <div>
@@ -1056,6 +1182,7 @@ const SchoolAdminDashboard = () => {
         <StatCard icon={Shield} label="Scheme Coverage" value={`${Math.round((schemeCoverage[0]?.covered ?? 87) * 100 / Math.max(1, schemeCoverage[0]?.eligible ?? 100))}%`} change={3.2} color="#7c3aed" />
         <StatCard icon={Leaf} label="Climate Risk Score" value={`${climateMetrics.envScore}/100`} color="#059669" sub="AI Generated" />
         <StatCard icon={Activity} label="Avg. Attendance" value={`${averageAttendance}%`} change={-0.8} color="#0891b2" />
+        <StatCard icon={AlertCircle} label="Outbreak Spread Risk" value={`${outbreakSignals.triageScore}/100`} color={outbreakSignals.spreadLevel === "High" ? "#dc2626" : outbreakSignals.spreadLevel === "Medium" ? "#d97706" : "#16a34a"} sub={outbreakSignals.spreadLevel} />
       </div>
 
       {/* Charts Row */}
@@ -1138,6 +1265,25 @@ const SchoolAdminDashboard = () => {
       </div>
 
       <div style={{ marginTop: "16px" }}>
+        <Card title="Outbreak Early Warning (School)">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Likely Disease Family</p>
+              <p style={{ color: th.text, fontWeight: 700, fontSize: "13px" }}>{outbreakSignals.likelyDiseaseFamily}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginTop: "6px" }}>Symptom Clusters: {outbreakSignals.symptomClusters.length}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Chronic Absentees: {outbreakSignals.attendanceSignals.chronicAbsentees.length}</p>
+            </div>
+            <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Immediate Action Plan</p>
+              <p style={{ color: th.text, fontSize: "12px" }}>1. Screen fever-symptom students today.</p>
+              <p style={{ color: th.text, fontSize: "12px" }}>2. Trigger parent advisory for affected classes.</p>
+              <p style={{ color: th.text, fontSize: "12px" }}>3. Create focused camp within 48 hours.</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: "16px" }}>
         <Card
           title="GenAI School Brief"
           action={<Button size="sm" variant="secondary" onClick={refreshGenAiSchoolSummary}>Refresh</Button>}
@@ -1152,13 +1298,17 @@ const SchoolAdminDashboard = () => {
 };
 
 const TeacherDashboard = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
 
   const classStudents = studentsData.slice(0, 35);
   const dueVaccinations = classStudents.filter(s => !s.vaccinated).length;
   const riskCount = { Low: 0, Medium: 0, High: 0 };
   classStudents.forEach(s => riskCount[s.riskScore]++);
+  const averageClassAttendance = classStudents.length
+    ? Math.round(classStudents.reduce((acc, item) => acc + Number(item.attendance || 0), 0) / classStudents.length)
+    : 0;
+  const classOutbreakSignals = buildOutbreakSignals(classStudents, sickLeaveReports);
 
   return (
     <div>
@@ -1166,7 +1316,8 @@ const TeacherDashboard = () => {
         <StatCard icon={Users} label="Class Students" value={classStudents.length} color="#1e40af" />
         <StatCard icon={AlertTriangle} label="High Risk" value={riskCount.High} color="#dc2626" bg={riskCount.High > 0 ? "#dc2626" : undefined} />
         <StatCard icon={Syringe} label="Vaccination Due" value={dueVaccinations} color="#d97706" />
-        <StatCard icon={Activity} label="Class Attendance" value="82%" color="#16a34a" />
+        <StatCard icon={Activity} label="Class Attendance" value={`${averageClassAttendance}%`} color="#16a34a" />
+        <StatCard icon={AlertCircle} label="Spread Alert" value={classOutbreakSignals.spreadLevel} color={classOutbreakSignals.spreadLevel === "High" ? "#dc2626" : classOutbreakSignals.spreadLevel === "Medium" ? "#d97706" : "#16a34a"} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
@@ -1228,18 +1379,36 @@ const TeacherDashboard = () => {
           ))}
         </div>
       </Card>
+
+      <div style={{ marginTop: "16px" }}>
+        <Card title="Class Outbreak Signals">
+          <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>Likely cluster: <strong>{classOutbreakSignals.likelyDiseaseFamily}</strong></p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {classOutbreakSignals.symptomClusters.slice(0, 4).map((cluster, idx) => (
+              <div key={`${cluster.className}-${cluster.symptom}-${idx}`} style={{ padding: "8px", borderRadius: "8px", border: `1px solid ${th.cardBorder}`, background: darkMode ? "#0f172a" : "#f8fafc" }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{cluster.symptom}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>{cluster.count} recent sick leaves</p>
+              </div>
+            ))}
+            {classOutbreakSignals.symptomClusters.length === 0 && (
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>No active symptom cluster in this class group.</p>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 };
 
 const ParentDashboard = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const child = studentsData[0] || students[46];
   const reasonCodes = Array.isArray(child?.reasonCodes) ? child.reasonCodes : [];
   const recommendedActions = Array.isArray(child?.recommendedActions) ? child.recommendedActions : [];
   const dietAdvice = buildDietAdvice(child);
   const backendRiskLevel = child?.riskScore === "High" ? "HIGH" : child?.riskScore === "Medium" ? "MEDIUM" : "LOW";
+  const parentOutbreakSignals = buildOutbreakSignals(studentsData.filter((item) => item.class === child?.class), sickLeaveReports);
 
   const growthData = [
     { month: "Jan", height: 128, weight: 28, bmi: 17.1 },
@@ -1333,6 +1502,14 @@ const ParentDashboard = () => {
         </Card>
       </div>
 
+      <Card title="Class Spread Alert for Parent" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.text, fontSize: "12px", marginBottom: "8px" }}>
+          Current spread level in {child?.class}: <strong>{parentOutbreakSignals.spreadLevel}</strong>
+        </p>
+        <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "6px" }}>Likely cluster: {parentOutbreakSignals.likelyDiseaseFamily}</p>
+        <p style={{ color: th.textMuted, fontSize: "12px" }}>Recommended: monitor fever/vomiting/cough, maintain hydration, and seek doctor care quickly for persistent symptoms.</p>
+      </Card>
+
       <Card title="Recommended Action Plan">
         {recommendedActions.length > 0 ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "10px" }}>
@@ -1377,7 +1554,7 @@ const ParentDashboard = () => {
 };
 
 const SuperAdminDashboard = () => {
-  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students, genAiSchoolSummary, refreshGenAiSchoolSummary } = useApp();
+  const { darkMode, districtRanking = districtData, districtClimateRisk, studentsData = students, genAiSchoolSummary, refreshGenAiSchoolSummary, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const normalizedRanking = (Array.isArray(districtRanking) ? districtRanking : [])
     .map((item, idx) => {
@@ -1400,6 +1577,7 @@ const SuperAdminDashboard = () => {
     ? Math.round(rankingData.reduce((acc, item) => acc + item.score, 0) / rankingData.length)
     : 76;
   const rankingDomain = buildScoreDomain(sortedRanking.slice(0, 12));
+  const districtOutbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
 
   return (
     <div>
@@ -1410,6 +1588,7 @@ const SuperAdminDashboard = () => {
         <StatCard icon={Shield} label="Scheme Coverage" value="79%" change={2.8} color="#16a34a" />
         <StatCard icon={Activity} label="Health Camps (YTD)" value="128" color="#0891b2" />
         <StatCard icon={Award} label="District Health Score" value={`${avgDistrictScore}/100`} color="#d97706" />
+        <StatCard icon={AlertCircle} label="District Spread Risk" value={`${districtOutbreakSignals.triageScore}/100`} color={districtOutbreakSignals.spreadLevel === "High" ? "#dc2626" : districtOutbreakSignals.spreadLevel === "Medium" ? "#d97706" : "#16a34a"} sub={districtOutbreakSignals.spreadLevel} />
       </div>
 
       {/* School Rankings */}
@@ -1449,6 +1628,24 @@ const SuperAdminDashboard = () => {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </Card>
+      </div>
+      <div style={{ marginBottom: "16px" }}>
+        <Card title="District Outbreak Intelligence">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+            <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Likely Disease Family</p>
+              <p style={{ color: th.text, fontWeight: 700, fontSize: "13px" }}>{districtOutbreakSignals.likelyDiseaseFamily}</p>
+            </div>
+            <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Symptom Clusters</p>
+              <p style={{ color: th.text, fontWeight: 700, fontSize: "13px" }}>{districtOutbreakSignals.symptomClusters.length}</p>
+            </div>
+            <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "10px" }}>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>Chronic Absentees</p>
+              <p style={{ color: th.text, fontWeight: 700, fontSize: "13px" }}>{districtOutbreakSignals.attendanceSignals.chronicAbsentees.length}</p>
+            </div>
+          </div>
         </Card>
       </div>
       <Card
@@ -1720,15 +1917,33 @@ const StudentProfile = ({ student: s, onBack }) => {
             <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>CURRENT CONDITION</p>
             <Badge color={s.condition === "Healthy" ? "green" : "orange"}>{s.condition}</Badge>
           </div>
+          <div style={{ marginBottom: "12px" }}>
+            <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>PREDICTED LIKELY CONDITION</p>
+            <Badge color={s.riskScore === "High" ? "red" : s.riskScore === "Medium" ? "yellow" : "green"}>
+              {s.predictedCondition || "General Risk"}
+            </Badge>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {["Anemia", "Malnutrition", "Vision Problem", "Dental Issues"].map(flag => (
-              <div key={flag} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "6px" }}>
-                <span style={{ color: th.text, fontSize: "12px" }}>{flag}</span>
-                <span style={{ color: s.condition === flag ? "#ef4444" : "#22c55e", fontSize: "11px", fontWeight: 600 }}>
-                  {s.condition === flag ? "⚠ Flagged" : "✓ Clear"}
-                </span>
-              </div>
-            ))}
+            {(Array.isArray(s.likelyConditions) && s.likelyConditions.length > 0
+              ? s.likelyConditions.slice(0, 4)
+              : [{ condition: "GENERAL_RISK", score: s.riskScore === "High" ? 0.8 : s.riskScore === "Medium" ? 0.55 : 0.25, level: s.riskScore?.toUpperCase?.() || "LOW" }]
+            ).map((entry, index) => {
+              const label = String(entry?.condition || "GENERAL_RISK")
+                .toLowerCase()
+                .split("_")
+                .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+                .join(" ")
+                .replace(" Risk", "");
+              const level = String(entry?.level || "LOW").toUpperCase();
+              return (
+                <div key={`${label}-${index}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "6px" }}>
+                  <span style={{ color: th.text, fontSize: "12px" }}>{label}</span>
+                  <span style={{ color: level === "HIGH" ? "#ef4444" : level === "MEDIUM" ? "#f59e0b" : "#22c55e", fontSize: "11px", fontWeight: 600 }}>
+                    {level} • {Math.round(Number(entry?.score || 0) * 100)}%
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>
@@ -1786,7 +2001,7 @@ const StudentProfile = ({ student: s, onBack }) => {
 // ============================================================
 
 const HealthCampsPage = () => {
-  const { darkMode, healthCampsData = healthCamps, createHealthCamp, user } = useApp();
+  const { darkMode, healthCampsData = healthCamps, createHealthCamp, user, studentsData = students, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1796,8 +2011,9 @@ const HealthCampsPage = () => {
     date: "",
   });
 
-  const campTypeColors = { "General Checkup": "blue", "Eye Checkup": "purple", "Vaccination": "green", "Blood Donation": "red", "VISION_DENTAL": "purple", "ANEMIA_SCREENING": "orange" };
+  const campTypeColors = { "General Checkup": "blue", "Eye Checkup": "purple", "Vaccination": "green", "Blood Donation": "red", "VISION_DENTAL": "purple", "ANEMIA_SCREENING": "orange", "OUTBREAK_SCREENING": "red", "RESPIRATORY_SCREENING": "orange" };
   const campTypeIcons = { "General Checkup": Stethoscope, "Eye Checkup": Eye, "Vaccination": Syringe, "Blood Donation": Heart };
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
 
   const handleCreateCamp = async () => {
     if (!form.date || !createHealthCamp) return;
@@ -1826,6 +2042,14 @@ const HealthCampsPage = () => {
         <h2 style={{ color: th.text, fontWeight: 700, fontSize: "16px" }}>Health Camps Management</h2>
         <Button icon={Plus} onClick={() => setShowCreate(!showCreate)}>Create Camp</Button>
       </div>
+
+      <Card title="Outbreak-driven Camp Recommendation" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.text, fontSize: "12px" }}>
+          Spread risk is <strong>{outbreakSignals.spreadLevel}</strong> ({outbreakSignals.triageScore}/100). Recommended next camp:
+          {" "}
+          <strong>{outbreakSignals.likelyDiseaseFamily.includes("Respiratory") ? "RESPIRATORY_SCREENING" : "OUTBREAK_SCREENING"}</strong>.
+        </p>
+      </Card>
 
       {/* Create Camp Form */}
       {showCreate && (
@@ -1919,8 +2143,9 @@ const HealthCampsPage = () => {
 // ============================================================
 
 const SchemesPage = () => {
-  const { darkMode, sendSMS } = useApp();
+  const { darkMode, sendSMS, studentsData = students } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const vaccinationGap = studentsData.filter((student) => !student.vaccinated).length;
 
   const schemes = [
     { name: "Midday Meal Scheme (PM POSHAN)", icon: "🍱", color: "#f59e0b", eligible: 112, covered: 108, missing: 4, missingDocs: ["Aadhaar Card", "Caste Certificate"] },
@@ -1932,6 +2157,11 @@ const SchemesPage = () => {
 
   return (
     <div>
+      <Card title="Disease Prevention Coverage Snapshot" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.text, fontSize: "12px" }}>
+          Students with vaccination gap: <strong>{vaccinationGap}</strong>. Prioritize catch-up drives to reduce spread of vaccine-preventable diseases.
+        </p>
+      </Card>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         {schemes.map(s => {
           const pct = Math.round(s.covered / s.eligible * 100);
@@ -2001,9 +2231,30 @@ const SchemesPage = () => {
 // ============================================================
 
 const ClimatePage = () => {
-  const { darkMode, climateMetrics = climateData } = useApp();
+  const { darkMode, climateMetrics = climateData, districtClimateRisk, districtRanking = districtData } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const cd = climateMetrics;
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 34);
+  const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 0);
+  const airQualityGrade = avgAqi >= 300 ? "Severe" : avgAqi >= 200 ? "Very Poor" : avgAqi >= 150 ? "Poor" : avgAqi >= 100 ? "Moderate" : "Good";
+  const schoolCleanlinessData = (Array.isArray(districtRanking) ? districtRanking : districtData)
+    .map((item, idx) => {
+      const schoolScore = Number(item?.score ?? 70);
+      const waterScore = Math.max(35, Math.min(95, Math.round(Number(cd.waterQuality || 70) - idx * 2 + schoolScore * 0.08)));
+      const aqiScore = Math.max(20, Math.min(95, Math.round(100 - avgAqi * 0.3 + schoolScore * 0.12 - idx)));
+      const heatScore = Math.max(20, Math.min(95, Math.round(100 - avgTemperature * 1.2 - heatAlertDays * 0.9 + schoolScore * 0.1)));
+      const cleanlinessScore = Math.max(0, Math.min(100, Math.round(waterScore * 0.35 + aqiScore * 0.4 + heatScore * 0.25)));
+      return {
+        school: String(item?.school || `School ${idx + 1}`),
+        waterScore,
+        aqiScore,
+        heatScore,
+        cleanlinessScore,
+      };
+    })
+    .sort((a, b) => b.cleanlinessScore - a.cleanlinessScore)
+    .slice(0, 12);
 
   const monthlyEnv = [
     { month: "Jan", score: 62, carbon: 2.8, water: 68 },
@@ -2024,9 +2275,12 @@ const ClimatePage = () => {
             <p style={{ color: "#fff", fontSize: "48px", fontWeight: 800, lineHeight: 1 }}>{cd.envScore}<span style={{ fontSize: "20px", color: "#86efac" }}>/100</span></p>
             <p style={{ color: "#86efac", fontSize: "13px", marginTop: "6px" }}>Good — Above District Average (62)</p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             {[
               { label: "Heatwave Risk", value: cd.heatwaveRisk, color: cd.heatwaveRisk === "High" ? "#ef4444" : "#f59e0b", icon: Thermometer },
+              { label: "Avg Temperature", value: `${avgTemperature.toFixed(1)}°C`, color: avgTemperature >= 40 ? "#ef4444" : avgTemperature >= 35 ? "#f59e0b" : "#22c55e", icon: Thermometer },
+              { label: "AQI", value: Math.round(avgAqi), color: avgAqi >= 200 ? "#ef4444" : avgAqi >= 120 ? "#f59e0b" : "#22c55e", icon: Wind },
+              { label: "Air Quality", value: airQualityGrade, color: avgAqi >= 150 ? "#ef4444" : avgAqi >= 100 ? "#f59e0b" : "#22c55e", icon: Wind },
               { label: "Water Quality", value: `${cd.waterQuality}/100`, color: "#22c55e", icon: Droplets },
               { label: "Carbon Footprint", value: `${cd.carbonFootprint} tCO₂`, color: "#f59e0b", icon: Wind },
               { label: "Trees Planted", value: cd.treesPlanted, color: "#22c55e", icon: TreePine },
@@ -2079,6 +2333,38 @@ const ClimatePage = () => {
           </div>
         </Card>
       </div>
+
+      <Card title="School Cleanliness & Safety Ranking">
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr style={{ background: darkMode ? "#0f172a" : "#f8fafc" }}>
+                {["Rank", "School", "Cleanliness Score", "Air Score", "Water Score", "Heat Safety"].map((h) => (
+                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: th.textMuted, fontSize: "11px", fontWeight: 700, borderBottom: `1px solid ${th.cardBorder}` }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {schoolCleanlinessData.map((row, idx) => (
+                <tr key={row.school} style={{ borderBottom: `1px solid ${th.cardBorder}` }}>
+                  <td style={{ padding: "10px 12px", color: th.text, fontWeight: 700 }}>{idx + 1}</td>
+                  <td style={{ padding: "10px 12px", color: th.text }}>{row.school}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <Badge color={row.cleanlinessScore >= 80 ? "green" : row.cleanlinessScore >= 65 ? "yellow" : "red"}>
+                      {row.cleanlinessScore}/100
+                    </Badge>
+                  </td>
+                  <td style={{ padding: "10px 12px", color: row.aqiScore >= 75 ? "#16a34a" : row.aqiScore >= 60 ? "#d97706" : "#dc2626", fontWeight: 600 }}>{row.aqiScore}</td>
+                  <td style={{ padding: "10px 12px", color: row.waterScore >= 75 ? "#16a34a" : row.waterScore >= 60 ? "#d97706" : "#dc2626", fontWeight: 600 }}>{row.waterScore}</td>
+                  <td style={{ padding: "10px 12px", color: row.heatScore >= 75 ? "#16a34a" : row.heatScore >= 60 ? "#d97706" : "#dc2626", fontWeight: 600 }}>{row.heatScore}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 };
@@ -2088,9 +2374,46 @@ const ClimatePage = () => {
 // ============================================================
 
 const AlertsPage = () => {
-  const { darkMode, studentsData = students, callParent, sendSMS, generateReport } = useApp();
+  const { darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const highRisk = studentsData.filter(s => s.riskScore === "High");
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const attendanceSignals = outbreakSignals.attendanceSignals;
+  const attendanceAlertCount = attendanceSignals.chronicAbsentees.length + attendanceSignals.classAlerts.length;
+  const symptomClusters = outbreakSignals.symptomClusters;
+  const sickLeaveCandidates = studentsData
+    .filter((student) => Number(student?.attendance || 0) < 90)
+    .slice(0, 30);
+  const [leaveForm, setLeaveForm] = useState({
+    studentId: String(sickLeaveCandidates[0]?.id || ""),
+    leaveType: "SICK",
+    reason: "",
+    symptoms: "",
+    date: new Date().toISOString().slice(0, 10)
+  });
+
+  const selectedStudent = studentsData.find((student) => student.id === leaveForm.studentId) || sickLeaveCandidates[0];
+
+  const submitLeaveSignal = () => {
+    if (!leaveForm.studentId || !selectedStudent) return;
+    const payload = {
+      id: `${leaveForm.studentId}-${Date.now()}`,
+      studentId: leaveForm.studentId,
+      studentName: selectedStudent.name,
+      className: selectedStudent.class,
+      leaveType: leaveForm.leaveType,
+      reason: leaveForm.reason.trim(),
+      symptoms: leaveForm.symptoms.trim(),
+      date: leaveForm.date,
+      reportedAt: new Date().toISOString()
+    };
+    logSickLeaveReport?.(payload);
+    setLeaveForm((prev) => ({
+      ...prev,
+      reason: "",
+      symptoms: ""
+    }));
+  };
 
   return (
     <div>
@@ -2104,10 +2427,101 @@ const AlertsPage = () => {
           <button onClick={() => sendSMS("919999999999", `Emergency alert: ${highRisk.length} students require immediate health attention.`)} style={{ background: "#fff", color: "#dc2626", border: "none", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
             📞 Notify All Parents
           </button>
-          <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
+          <button onClick={() => generateReport("emergency-health-alerts.json", { count: highRisk.length, students: highRisk, attendanceSignals, symptomClusters, likelyDiseaseFamily: outbreakSignals.likelyDiseaseFamily, spreadRisk: outbreakSignals.spreadLevel, generatedAt: new Date().toISOString() })} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)", borderRadius: "8px", padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}>
             📋 Generate Report
           </button>
         </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+          <p style={{ color: th.textMuted, fontSize: "11px" }}>Overall Attendance</p>
+          <p style={{ color: th.text, fontWeight: 800, fontSize: "22px" }}>{attendanceSignals.overallAverage}%</p>
+        </div>
+        <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+          <p style={{ color: th.textMuted, fontSize: "11px" }}>Chronic Absentees (&lt;75%)</p>
+          <p style={{ color: "#dc2626", fontWeight: 800, fontSize: "22px" }}>{attendanceSignals.chronicAbsentees.length}</p>
+        </div>
+        <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+          <p style={{ color: th.textMuted, fontSize: "11px" }}>Class Attendance Alerts</p>
+          <p style={{ color: "#d97706", fontWeight: 800, fontSize: "22px" }}>{attendanceSignals.classAlerts.length}</p>
+        </div>
+        <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+          <p style={{ color: th.textMuted, fontSize: "11px" }}>Total Attendance Signals</p>
+          <p style={{ color: th.text, fontWeight: 800, fontSize: "22px" }}>{attendanceAlertCount}</p>
+        </div>
+      </div>
+
+      <Card title="Attendance Early Warning">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <div>
+            <p style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginBottom: "8px" }}>High-Risk Attendance Students</p>
+            {attendanceSignals.chronicAbsentees.slice(0, 6).map((student) => (
+              <div key={student.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", marginBottom: "6px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
+                <div>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 600 }}>{student.name}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{student.class} • {student.condition}</p>
+                </div>
+                <Badge color="red">{student.attendance}%</Badge>
+              </div>
+            ))}
+            {attendanceSignals.chronicAbsentees.length === 0 && (
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>No chronic absentee risk detected.</p>
+            )}
+          </div>
+          <div>
+            <p style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginBottom: "8px" }}>Class-Level Attendance Drops</p>
+            {attendanceSignals.classAlerts.slice(0, 6).map((entry) => (
+              <div key={entry.className} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", marginBottom: "6px", background: darkMode ? "#0f172a" : "#f8fafc", borderRadius: "8px" }}>
+                <div>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 600 }}>{entry.className}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{entry.lowAttendanceStudents}/{entry.students} students below 80%</p>
+                </div>
+                <Badge color={entry.avgAttendance < 75 ? "red" : "yellow"}>{entry.avgAttendance}%</Badge>
+              </div>
+            ))}
+            {attendanceSignals.classAlerts.length === 0 && (
+              <p style={{ color: th.textMuted, fontSize: "12px" }}>No class-level drop alerts right now.</p>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ marginTop: "12px", marginBottom: "12px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+        <Card title="Sick Leave Symptom Intake">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <select value={leaveForm.studentId} onChange={(e) => setLeaveForm((prev) => ({ ...prev, studentId: e.target.value }))} style={{ padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }}>
+              {sickLeaveCandidates.map((student) => (
+                <option key={student.id} value={student.id}>{student.name} ({student.class})</option>
+              ))}
+            </select>
+            <select value={leaveForm.leaveType} onChange={(e) => setLeaveForm((prev) => ({ ...prev, leaveType: e.target.value }))} style={{ padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }}>
+              <option value="SICK">Sick Leave</option>
+              <option value="PERSONAL">Personal Leave</option>
+            </select>
+            <input value={leaveForm.reason} onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))} placeholder="Reason (e.g. fever + weakness)" style={{ padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }} />
+            <input value={leaveForm.date} onChange={(e) => setLeaveForm((prev) => ({ ...prev, date: e.target.value }))} type="date" style={{ padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }} />
+          </div>
+          <input value={leaveForm.symptoms} onChange={(e) => setLeaveForm((prev) => ({ ...prev, symptoms: e.target.value }))} placeholder="Symptoms comma-separated (fever, vomiting, headache)" style={{ width: "100%", marginTop: "10px", padding: "8px 10px", border: `1px solid ${th.cardBorder}`, borderRadius: "8px", background: th.card, color: th.text, fontSize: "12px" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+            <p style={{ color: th.textMuted, fontSize: "11px" }}>Use this when absenteeism is due to sickness so symptoms are used in spread detection.</p>
+            <Button size="sm" variant="danger" onClick={submitLeaveSignal}>Log Sick Leave</Button>
+          </div>
+        </Card>
+
+        <Card title="Symptom Cluster Signals (Last 3 Days)">
+          {symptomClusters.slice(0, 6).map((cluster, idx) => (
+            <div key={`${cluster.className}-${cluster.symptom}-${idx}`} style={{ padding: "8px 10px", marginBottom: "6px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+              <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{cluster.className}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px" }}>
+                Symptom: <span style={{ color: th.text }}>{cluster.symptom}</span> • Cases: {cluster.count}
+              </p>
+            </div>
+          ))}
+          {symptomClusters.length === 0 && (
+            <p style={{ color: th.textMuted, fontSize: "12px" }}>No symptom cluster detected yet. Log sick leaves with symptoms to activate this signal.</p>
+          )}
+        </Card>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -2149,8 +2563,19 @@ const AlertsPage = () => {
 // ============================================================
 
 const AnalyticsPage = () => {
-  const { darkMode, schemeCoverage = schemeData } = useApp();
+  const { darkMode, schemeCoverage = schemeData, sickLeaveReports = [], studentsData = students } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const outbreakTrend = ["-6", "-5", "-4", "-3", "-2", "-1", "0"].map((offset) => {
+    const day = new Date(Date.now() + Number(offset) * 24 * 60 * 60 * 1000);
+    const key = day.toISOString().slice(0, 10);
+    const dayReports = sickLeaveReports.filter((r) => String(r.date || "").slice(0, 10) === key);
+    return {
+      day: day.toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+      sickLeaves: dayReports.length,
+      symptomSignals: dayReports.reduce((acc, item) => acc + parseSymptomList(item.symptoms).length, 0)
+    };
+  });
 
   const bmiDist = [
     { range: "Underweight (<18.5)", count: 18, color: "#f59e0b" },
@@ -2218,6 +2643,25 @@ const AnalyticsPage = () => {
           </ResponsiveContainer>
         </Card>
       </div>
+
+      <div style={{ marginTop: "16px" }}>
+        <Card title="Outbreak Signal Trend (Attendance + Symptoms)">
+          <p style={{ color: th.textMuted, fontSize: "12px", marginBottom: "8px" }}>
+            Current spread risk: <strong style={{ color: th.text }}>{outbreakSignals.spreadLevel}</strong> ({outbreakSignals.triageScore}/100)
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={outbreakTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? "#334155" : "#e2e8f0"} />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: th.textMuted }} />
+              <YAxis tick={{ fontSize: 11, fill: th.textMuted }} />
+              <Tooltip contentStyle={{ background: th.card, borderRadius: "8px" }} />
+              <Legend />
+              <Bar dataKey="sickLeaves" name="Sick Leaves" fill="#dc2626" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="symptomSignals" name="Symptom Signals" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -2227,8 +2671,9 @@ const AnalyticsPage = () => {
 // ============================================================
 
 const ReportsPage = () => {
-  const { darkMode, generateReport, studentsData = students, healthCampsData = healthCamps, schemeCoverage = schemeData, climateMetrics = climateData } = useApp();
+  const { darkMode, generateReport, studentsData = students, healthCampsData = healthCamps, schemeCoverage = schemeData, climateMetrics = climateData, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
+  const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
 
   const reports = [
     { name: "Annual School Health Report 2024-25", type: "PDF", size: "2.4 MB", date: "Feb 01, 2025", status: "Ready" },
@@ -2242,7 +2687,10 @@ const ReportsPage = () => {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}>
         <h2 style={{ color: th.text, fontWeight: 700 }}>Reports & Downloads</h2>
-        <Button icon={Plus} onClick={() => generateReport("consolidated-report.json", { students: studentsData.length, camps: healthCampsData.length, schemes: schemeCoverage, climate: climateMetrics, generatedAt: new Date().toISOString() })}>Generate New Report</Button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Button icon={AlertTriangle} variant="danger" onClick={() => generateReport("outbreak-readiness-report.json", { spreadRisk: outbreakSignals, sickLeaveReports, generatedAt: new Date().toISOString() })}>Outbreak Report</Button>
+          <Button icon={Plus} onClick={() => generateReport("consolidated-report.json", { students: studentsData.length, camps: healthCampsData.length, schemes: schemeCoverage, climate: climateMetrics, spreadRisk: outbreakSignals, generatedAt: new Date().toISOString() })}>Generate New Report</Button>
+        </div>
       </div>
       <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "12px", overflow: "hidden" }}>
         {reports.map((r, i) => (
@@ -2338,6 +2786,7 @@ export default function SwasthyaSetu() {
   const [districtClimateRisk, setDistrictClimateRisk] = useState(null);
   const [climateMetrics, setClimateMetrics] = useState(climateData);
   const [genAiSchoolSummary, setGenAiSchoolSummary] = useState("");
+  const [sickLeaveReports, setSickLeaveReports] = useState([]);
 
   const refreshGenAiSchoolSummary = useCallback(async () => {
     if (!token || !user?.schoolId) return;
@@ -2648,6 +3097,11 @@ export default function SwasthyaSetu() {
     URL.revokeObjectURL(url);
   }, []);
 
+  const logSickLeaveReport = useCallback((report) => {
+    if (!report) return;
+    setSickLeaveReports((prev) => [report, ...prev].slice(0, 300));
+  }, []);
+
   useEffect(() => {
     void ensureBackendAwake().catch(() => {});
   }, []);
@@ -2700,6 +3154,8 @@ export default function SwasthyaSetu() {
         districtRanking,
         districtClimateRisk,
         climateMetrics,
+        sickLeaveReports,
+        logSickLeaveReport,
         genAiSchoolSummary,
         refreshGenAiSchoolSummary,
         createHealthCamp,
