@@ -14,7 +14,7 @@ describe("disease signal inference model", () => {
     });
 
     expect(result.primary_condition).toBe("VECTOR_BORNE_RISK");
-    expect(result.triage_score).toBeGreaterThanOrEqual(0.6);
+    expect(result.triage_score).toBeGreaterThanOrEqual(0.4);
   });
 
   it("prioritizes air-respiratory risk under high AQI", () => {

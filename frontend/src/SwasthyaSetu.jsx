@@ -2381,6 +2381,28 @@ const AlertsPage = () => {
   const attendanceSignals = outbreakSignals.attendanceSignals;
   const attendanceAlertCount = attendanceSignals.chronicAbsentees.length + attendanceSignals.classAlerts.length;
   const symptomClusters = outbreakSignals.symptomClusters;
+  const recentSickReports = sickLeaveReports.filter((report) => {
+    if (String(report?.leaveType || "").toUpperCase() !== "SICK") return false;
+    const ts = new Date(report?.reportedAt || report?.date || 0).getTime();
+    return Number.isFinite(ts) && Date.now() - ts <= 2 * 24 * 60 * 60 * 1000;
+  });
+  const dengueSignalReports = recentSickReports.filter((report) => {
+    const reason = String(report?.reason || "").toLowerCase();
+    const symptoms = parseSymptomList(report?.symptoms);
+    const hasFever = symptoms.includes("fever") || reason.includes("fever");
+    const hasCompanionSignal = symptoms.some((item) => ["vomiting", "headache", "body pain", "rash"].includes(item)) ||
+      ["vomiting", "headache", "body pain", "rash"].some((item) => reason.includes(item));
+    return reason.includes("dengue") || (hasFever && hasCompanionSignal);
+  });
+  const dengueClassCounts = dengueSignalReports.reduce((acc, report) => {
+    const key = String(report?.className || "Unknown Class");
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const probableDengueClasses = Object.entries(dengueClassCounts)
+    .filter(([, count]) => Number(count) >= 3)
+    .map(([className]) => className);
+  const probableDengueStudents = studentsData.filter((student) => probableDengueClasses.includes(String(student?.class || "")));
   const sickLeaveCandidates = studentsData
     .filter((student) => Number(student?.attendance || 0) < 90)
     .slice(0, 30);
@@ -2432,6 +2454,40 @@ const AlertsPage = () => {
           </button>
         </div>
       </div>
+
+      {probableDengueClasses.length > 0 && (
+        <Card title="Probable Dengue Cluster Alert (2-Day Rise)">
+          <div style={{ background: darkMode ? "#3f1d1d" : "#fff1f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px", marginBottom: "10px" }}>
+            <p style={{ color: th.text, fontSize: "13px", fontWeight: 700 }}>
+              Cases with dengue-like signals increased in: {probableDengueClasses.join(", ")}
+            </p>
+            <p style={{ color: th.textMuted, fontSize: "12px" }}>
+              This is an early warning (not medical diagnosis). Advise parents for immediate doctor consultation and hydration/safety protocol.
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {probableDengueStudents.slice(0, 12).map((student) => (
+              <div key={`dengue-${student.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+                <div>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{student.name}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{student.class} • Parent: {student.parentPhone}</p>
+                </div>
+                <button
+                  onClick={() =>
+                    sendSMS(
+                      student.parentPhone,
+                      `School alert: In ${student.class}, dengue-like symptoms have increased in last 2 days. This is a precautionary warning, not diagnosis. Please consult doctor if fever/vomiting/headache continues.`
+                    )
+                  }
+                  style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                >
+                  Notify Parent
+                </button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "16px" }}>
         <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
