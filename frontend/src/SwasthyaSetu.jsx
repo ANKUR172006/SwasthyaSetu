@@ -2407,25 +2407,121 @@ const AlertsPage = () => {
     const ts = new Date(report?.reportedAt || report?.date || 0).getTime();
     return Number.isFinite(ts) && Date.now() - ts <= 2 * 24 * 60 * 60 * 1000;
   });
-  const dengueSignalReports = recentSickReports.filter((report) => {
+  const weekSickReports = sickLeaveReports.filter((report) => {
+    if (String(report?.leaveType || "").toUpperCase() !== "SICK") return false;
+    const ts = new Date(report?.reportedAt || report?.date || 0).getTime();
+    return Number.isFinite(ts) && Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
+  });
+  const meetsDualWindowThreshold = (twoDayCount, sevenDayCount, threshold) => {
+    const shortWindowSpike = Number(twoDayCount) >= Number(threshold);
+    const trendSupport = Number(sevenDayCount) >= Number(threshold) + 1;
+    const strongSpike = Number(twoDayCount) >= Number(threshold) + 2;
+    return shortWindowSpike && (trendSupport || strongSpike);
+  };
+  const dengueMatcher = (report) => {
     const reason = String(report?.reason || "").toLowerCase();
     const symptoms = parseSymptomList(report?.symptoms);
     const hasFever = symptoms.includes("fever") || reason.includes("fever");
     const hasCompanionSignal = symptoms.some((item) => ["vomiting", "headache", "body pain", "rash"].includes(item)) ||
       ["vomiting", "headache", "body pain", "rash"].some((item) => reason.includes(item));
     return reason.includes("dengue") || (hasFever && hasCompanionSignal);
-  });
-  const dengueClassCounts = dengueSignalReports.reduce((acc, report) => {
+  };
+  const dengueSignalReports = recentSickReports.filter(dengueMatcher);
+  const dengueWeekReports = weekSickReports.filter(dengueMatcher);
+  const dengueClassCounts2d = dengueSignalReports.reduce((acc, report) => {
     const key = String(report?.className || "Unknown Class");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  const probableDengueClasses = Object.entries(dengueClassCounts)
-    .filter(([, count]) => Number(count) >= 3)
+  const dengueClassCounts7d = dengueWeekReports.reduce((acc, report) => {
+    const key = String(report?.className || "Unknown Class");
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const probableDengueClasses = Object.entries(dengueClassCounts2d)
+    .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, dengueClassCounts7d[className] || 0, 3))
     .map(([className]) => className);
   const probableDengueStudents = studentsData.filter((student) => probableDengueClasses.includes(String(student?.class || "")));
   const myChild = isParentView ? studentsData[0] : null;
   const parentClassAlert = isParentView && myChild ? probableDengueClasses.includes(String(myChild.class || "")) : false;
+  const probableClusterRules = [
+    {
+      key: "vectorOther",
+      title: "Probable Vector Cluster Alert (Malaria/Chikungunya-like)",
+      reasonKeywords: ["malaria", "chikungunya", "mosquito", "joint pain"],
+      symptomKeywords: ["fever", "chills", "joint pain", "body pain", "headache", "rash"],
+      threshold: 3,
+      notifyTemplate: (studentClass) =>
+        `School alert: In ${studentClass}, vector-borne-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please consult doctor if fever/chills/joint pain persists.`
+    },
+    {
+      key: "waterBorne",
+      title: "Probable Water/Food-borne Cluster Alert",
+      reasonKeywords: ["diarrhea", "cholera", "typhoid", "jaundice", "hepatitis", "food poisoning", "stomach infection"],
+      symptomKeywords: ["diarrhea", "loose motion", "vomiting", "stomach pain", "nausea", "dehydration", "jaundice"],
+      threshold: 3,
+      notifyTemplate: (studentClass) =>
+        `School alert: In ${studentClass}, water/food-borne-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please ensure safe hydration and consult doctor for persistent vomiting/diarrhea.`
+    },
+    {
+      key: "respiratory",
+      title: "Probable Respiratory Cluster Alert",
+      reasonKeywords: ["asthma", "respiratory", "breathing", "wheezing", "pollution", "cough"],
+      symptomKeywords: ["cough", "breathlessness", "wheezing", "sore throat", "chest tightness", "fever"],
+      threshold: 3,
+      notifyTemplate: (studentClass) =>
+        `School alert: In ${studentClass}, respiratory-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please monitor breathing symptoms and seek doctor advice if symptoms continue.`
+    },
+    {
+      key: "heatIllness",
+      title: "Probable Heat Illness Cluster Alert",
+      reasonKeywords: ["heat", "dehydration", "heat stroke", "heat exhaustion", "sun exposure", "fainting", "dizziness"],
+      symptomKeywords: ["dehydration", "dizziness", "fainting", "headache", "vomiting", "weakness"],
+      threshold: 2,
+      notifyTemplate: (studentClass) =>
+        `School alert: In ${studentClass}, heat-illness-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please focus on hydration, avoid peak heat, and consult doctor if symptoms persist.`
+    }
+  ];
+  const diseaseClusterAlerts = probableClusterRules.map((rule) => {
+    const isRuleMatch = (report) => {
+      const reason = String(report?.reason || "").toLowerCase();
+      const symptoms = parseSymptomList(report?.symptoms);
+      if (rule.key === "vectorOther" && reason.includes("dengue")) return false;
+      const keywordMatch = rule.reasonKeywords.some((keyword) => reason.includes(keyword));
+      const symptomHits = rule.symptomKeywords.reduce((acc, keyword) => {
+        const inSymptoms = symptoms.includes(keyword);
+        const inReason = reason.includes(keyword);
+        return acc + (inSymptoms || inReason ? 1 : 0);
+      }, 0);
+      return keywordMatch || symptomHits >= 2;
+    };
+    const matchedReports2d = recentSickReports.filter(isRuleMatch);
+    const matchedReports7d = weekSickReports.filter(isRuleMatch);
+    const classCounts2d = matchedReports2d.reduce((acc, report) => {
+      const key = String(report?.className || "Unknown Class");
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const classCounts7d = matchedReports7d.reduce((acc, report) => {
+      const key = String(report?.className || "Unknown Class");
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const probableClasses = Object.entries(classCounts2d)
+      .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, classCounts7d[className] || 0, Number(rule.threshold || 3)))
+      .map(([className]) => className);
+    const probableStudents = studentsData.filter((student) => probableClasses.includes(String(student?.class || "")));
+    return {
+      ...rule,
+      reportCount: matchedReports2d.length,
+      weeklyTrendCount: matchedReports7d.length,
+      probableClasses,
+      probableStudents
+    };
+  }).filter((item) => item.probableClasses.length > 0);
+  const parentAdditionalAlerts = isParentView && myChild
+    ? diseaseClusterAlerts.filter((alert) => alert.probableClasses.includes(String(myChild.class || "")))
+    : [];
   const outbreakTrend = buildOutbreakTrendSeries(sickLeaveReports, 10);
   const sickLeaveCandidates = studentsData
     .filter((student) => Number(student?.attendance || 0) < 90)
@@ -2496,7 +2592,7 @@ const AlertsPage = () => {
       </div>
 
       {(probableDengueClasses.length > 0 || parentClassAlert) && (
-        <Card title="Probable Dengue Cluster Alert (2-Day Rise)">
+        <Card title="Probable Dengue Cluster Alert (2-Day Spike + 7-Day Trend)">
           <div style={{ background: darkMode ? "#3f1d1d" : "#fff1f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px", marginBottom: "10px" }}>
             <p style={{ color: th.text, fontSize: "13px", fontWeight: 700 }}>
               Cases with dengue-like signals increased in: {probableDengueClasses.join(", ")}
@@ -2516,7 +2612,7 @@ const AlertsPage = () => {
                   onClick={() =>
                     sendSMS(
                       student.parentPhone,
-                      `School alert: In ${student.class}, dengue-like symptoms have increased in last 2 days. This is a precautionary warning, not diagnosis. Please consult doctor if fever/vomiting/headache continues.`
+                      `School alert: In ${student.class}, dengue-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please consult doctor if fever/vomiting/headache continues.`
                     )
                   }
                   style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
@@ -2536,6 +2632,49 @@ const AlertsPage = () => {
             </div>
           )}
         </Card>
+      )}
+      {(diseaseClusterAlerts.length > 0 || parentAdditionalAlerts.length > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "12px" }}>
+          {(isParentView ? parentAdditionalAlerts : diseaseClusterAlerts).map((alert) => (
+            <Card key={alert.key} title={`${alert.title} (2-Day Spike + 7-Day Trend)`}>
+              <div style={{ background: darkMode ? "#1f2937" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px", marginBottom: "10px" }}>
+                <p style={{ color: th.text, fontSize: "13px", fontWeight: 700 }}>
+                  Cases increased in: {alert.probableClasses.join(", ")}
+                </p>
+                <p style={{ color: th.textMuted, fontSize: "12px" }}>
+                  Precautionary early warning only, not diagnosis. Activate prevention protocol and monitor class trend closely.
+                </p>
+              </div>
+              {!isParentView && <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {alert.probableStudents.slice(0, 10).map((student) => (
+                  <div key={`${alert.key}-${student.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+                    <div>
+                      <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{student.name}</p>
+                      <p style={{ color: th.textMuted, fontSize: "11px" }}>{student.class} • Parent: {student.parentPhone}</p>
+                    </div>
+                    <button
+                      onClick={() => sendSMS(student.parentPhone, alert.notifyTemplate(student.class))}
+                      style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Notify Parent
+                    </button>
+                  </div>
+                ))}
+              </div>}
+              {isParentView && myChild && (
+                <div style={{ padding: "8px 10px", borderRadius: "8px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{myChild.name} ({myChild.class})</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "6px" }}>
+                    Precautionary class alert active. Monitor symptoms and consult doctor quickly if symptoms persist or worsen.
+                  </p>
+                  <button onClick={() => callParent("108", "Emergency Helpline")} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 10px", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}>
+                    Call Health Helpline
+                  </button>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "16px" }}>
