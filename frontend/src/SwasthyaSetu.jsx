@@ -2017,7 +2017,7 @@ const StudentProfile = ({ student: s, onBack }) => {
 // ============================================================
 
 const HealthCampsPage = () => {
-  const { darkMode, healthCampsData = healthCamps, createHealthCamp, user, studentsData = students, sickLeaveReports = [] } = useApp();
+  const { darkMode, healthCampsData = healthCamps, createHealthCamp, user, studentsData = students, sickLeaveReports = [], climateMetrics = climateData, districtClimateRisk } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2030,6 +2030,100 @@ const HealthCampsPage = () => {
   const campTypeColors = { "General Checkup": "blue", "Eye Checkup": "purple", "Vaccination": "green", "Blood Donation": "red", "VISION_DENTAL": "purple", "ANEMIA_SCREENING": "orange", "OUTBREAK_SCREENING": "red", "RESPIRATORY_SCREENING": "orange" };
   const campTypeIcons = { "General Checkup": Stethoscope, "Eye Checkup": Eye, "Vaccination": Syringe, "Blood Donation": Heart };
   const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const vaccinationDue = studentsData.filter((student) => !student.vaccinated).length;
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
+  const waterQuality = Number(climateMetrics?.waterQuality ?? 70);
+  const recentReports7d = sickLeaveReports.filter((report) => {
+    if (String(report?.leaveType || "").toUpperCase() !== "SICK") return false;
+    const ts = new Date(report?.reportedAt || report?.date || 0).getTime();
+    return Number.isFinite(ts) && Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
+  });
+  const classifyCaseFamily = (report) => {
+    const reason = String(report?.reason || "").toLowerCase();
+    const symptoms = parseSymptomList(report?.symptoms);
+    const hasAny = (items) => items.some((item) => reason.includes(item) || symptoms.includes(item));
+    if (hasAny(["dengue", "malaria", "chikungunya", "mosquito", "chills", "rash", "joint pain"])) return "VECTOR";
+    if (hasAny(["diarrhea", "cholera", "typhoid", "jaundice", "hepatitis", "loose motion", "nausea", "stomach pain"])) return "WATER";
+    if (hasAny(["cough", "breathlessness", "wheezing", "asthma", "sore throat"])) return "RESPIRATORY";
+    if (hasAny(["heat", "dehydration", "fainting", "dizziness", "heat stroke"])) return "HEAT";
+    return "GENERAL";
+  };
+  const caseSummary = recentReports7d.reduce((acc, report) => {
+    const family = classifyCaseFamily(report);
+    const className = String(report?.className || "Unknown Class");
+    acc.family[family] = (acc.family[family] || 0) + 1;
+    acc.classCounts[className] = (acc.classCounts[className] || 0) + 1;
+    return acc;
+  }, { family: {}, classCounts: {} });
+  const topCaseClasses = Object.entries(caseSummary.classCounts)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .slice(0, 3)
+    .map(([className, count]) => `${className} (${count})`);
+  const campRecommendations = [];
+  if ((caseSummary.family.VECTOR || 0) >= 4) {
+    campRecommendations.push({
+      key: "vector",
+      priority: "High",
+      campType: "OUTBREAK_SCREENING",
+      title: "Vector-borne case surge response camp",
+      reason: `${caseSummary.family.VECTOR} vector-like sick cases in last 7 days`,
+      actions: "Class screening + source reduction drive + parent advisory",
+      participantsCount: String(Math.max(60, (caseSummary.family.VECTOR || 0) * 12))
+    });
+  }
+  if ((caseSummary.family.WATER || 0) >= 4 || waterQuality <= 65) {
+    campRecommendations.push({
+      key: "water",
+      priority: "High",
+      campType: "Vaccination",
+      title: "Water/food-borne prevention + vaccination drive",
+      reason: `${caseSummary.family.WATER || 0} water-borne-like cases and water score ${waterQuality}/100`,
+      actions: "Safe-water counseling + vaccination due coverage + hygiene protocol",
+      participantsCount: String(Math.max(80, vaccinationDue))
+    });
+  }
+  if ((caseSummary.family.RESPIRATORY || 0) >= 4 || avgAqi >= 170) {
+    campRecommendations.push({
+      key: "resp",
+      priority: "Medium",
+      campType: "RESPIRATORY_SCREENING",
+      title: "Respiratory risk screening camp",
+      reason: `${caseSummary.family.RESPIRATORY || 0} respiratory-like cases and AQI ${Math.round(avgAqi)}`,
+      actions: "Breathing symptom screening + clean-air classroom protocol",
+      participantsCount: String(Math.max(50, (caseSummary.family.RESPIRATORY || 0) * 10))
+    });
+  }
+  if (vaccinationDue >= 12) {
+    campRecommendations.push({
+      key: "vax-gap",
+      priority: "Medium",
+      campType: "Vaccination",
+      title: "Routine vaccination backlog drive",
+      reason: `${vaccinationDue} students have pending vaccination`,
+      actions: "Micro-plan by class + parent consent follow-up + PHC coordination",
+      participantsCount: String(vaccinationDue)
+    });
+  }
+  if (campRecommendations.length === 0) {
+    campRecommendations.push({
+      key: "general",
+      priority: "Low",
+      campType: outbreakSignals.likelyDiseaseFamily.includes("Respiratory") ? "RESPIRATORY_SCREENING" : "General Checkup",
+      title: "Preventive general health camp",
+      reason: "No strong disease cluster trigger; keep preventive screening active",
+      actions: "Monthly screening + hydration, hygiene and attendance follow-up",
+      participantsCount: "80"
+    });
+  }
+  const applyRecommendation = (recommendation) => {
+    setShowCreate(true);
+    setForm((prev) => ({
+      ...prev,
+      campType: recommendation.campType,
+      participantsCount: recommendation.participantsCount,
+      date: prev.date || new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    }));
+  };
 
   const handleCreateCamp = async () => {
     if (!form.date || !createHealthCamp) return;
@@ -2065,6 +2159,27 @@ const HealthCampsPage = () => {
           {" "}
           <strong>{outbreakSignals.likelyDiseaseFamily.includes("Respiratory") ? "RESPIRATORY_SCREENING" : "OUTBREAK_SCREENING"}</strong>.
         </p>
+      </Card>
+      <Card title="Case Count Triggered Camp & Vaccination Planner" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "10px" }}>
+          Auto-prioritizes camps when case counts rise. Target classes: {topCaseClasses.length ? topCaseClasses.join(", ") : "No class surge detected"}.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "10px" }}>
+          {campRecommendations.map((rec) => (
+            <div key={rec.key} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px", background: darkMode ? "#0f172a" : "#f8fafc" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginBottom: "4px" }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{rec.title}</p>
+                <Badge color={rec.priority === "High" ? "red" : rec.priority === "Medium" ? "yellow" : "blue"}>{rec.priority}</Badge>
+              </div>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "4px" }}>Trigger: {rec.reason}</p>
+              <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>Action: {rec.actions}</p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <p style={{ color: th.text, fontSize: "11px", fontWeight: 700 }}>{rec.campType} • {rec.participantsCount} students</p>
+                <Button size="sm" variant="secondary" onClick={() => applyRecommendation(rec)}>Use Plan</Button>
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {/* Create Camp Form */}
@@ -2250,10 +2365,20 @@ const ClimatePage = () => {
   const { darkMode, climateMetrics = climateData, districtClimateRisk, districtRanking = districtData } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const cd = climateMetrics;
+  const [waterImprovePct, setWaterImprovePct] = useState(20);
+  const [wasteImprovePct, setWasteImprovePct] = useState(15);
   const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
   const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 34);
   const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 0);
   const airQualityGrade = avgAqi >= 300 ? "Severe" : avgAqi >= 200 ? "Very Poor" : avgAqi >= 150 ? "Poor" : avgAqi >= 100 ? "Moderate" : "Good";
+  const simulatedWater = Math.max(0, Math.min(100, Number(cd.waterQuality || 70) + waterImprovePct));
+  const simulatedWaste = Math.max(0, Math.min(100, Number(cd.wasteRecycled || 65) + wasteImprovePct));
+  const baseWaterRisk = Math.max(0, Math.min(100, Math.round((100 - Number(cd.waterQuality || 70)) * 0.7 + (100 - Number(cd.wasteRecycled || 65)) * 0.3)));
+  const scenarioWaterRisk = Math.max(0, Math.min(100, Math.round((100 - simulatedWater) * 0.7 + (100 - simulatedWaste) * 0.3)));
+  const baseHeatRisk = Math.max(0, Math.min(100, Math.round(Math.max(0, avgTemperature - 30) * 4 + heatAlertDays * 2)));
+  const scenarioHeatRisk = Math.max(0, Math.min(100, Math.round(baseHeatRisk - wasteImprovePct * 0.4)));
+  const baseAirRisk = Math.max(0, Math.min(100, Math.round(avgAqi * 0.35)));
+  const scenarioAirRisk = Math.max(0, Math.min(100, Math.round(baseAirRisk - wasteImprovePct * 0.5)));
   const schoolCleanlinessData = (Array.isArray(districtRanking) ? districtRanking : districtData)
     .map((item, idx) => {
       const schoolScore = Number(item?.score ?? 70);
@@ -2349,6 +2474,33 @@ const ClimatePage = () => {
           </div>
         </Card>
       </div>
+      <Card title="Scenario Simulation Engine" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "10px" }}>
+          Simulate prevention impact for planning. Example: improve water and waste conditions to estimate risk reduction.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "12px" }}>
+          <div style={{ background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "12px" }}>
+            <label style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>Water Quality Improvement: {waterImprovePct}%</label>
+            <input type="range" min="0" max="30" value={waterImprovePct} onChange={(e) => setWaterImprovePct(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+            <label style={{ color: th.text, fontSize: "12px", fontWeight: 700, marginTop: "10px", display: "block" }}>Waste Recycling Improvement: {wasteImprovePct}%</label>
+            <input type="range" min="0" max="30" value={wasteImprovePct} onChange={(e) => setWasteImprovePct(Number(e.target.value))} style={{ width: "100%", marginTop: "6px" }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px" }}>
+            {[
+              { label: "Water-borne Risk", before: baseWaterRisk, after: scenarioWaterRisk },
+              { label: "Heat Illness Risk", before: baseHeatRisk, after: scenarioHeatRisk },
+              { label: "Air Risk", before: baseAirRisk, after: scenarioAirRisk },
+            ].map((item) => (
+              <div key={item.label} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px", background: th.card }}>
+                <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.label}</p>
+                <p style={{ color: th.textMuted, fontSize: "11px" }}>
+                  {item.before} {"->"} <strong style={{ color: th.text }}>{item.after}</strong> ({Math.max(0, item.before - item.after)} pts reduction)
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
 
       <Card title="School Cleanliness & Safety Ranking">
         <div style={{ overflowX: "auto" }}>
@@ -2390,7 +2542,7 @@ const ClimatePage = () => {
 // ============================================================
 
 const AlertsPage = () => {
-  const { user, darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport, operationalEvents = [], logOperationalEvent } = useApp();
+  const { user, darkMode, studentsData = students, callParent, sendSMS, generateReport, sickLeaveReports = [], logSickLeaveReport, operationalEvents = [], logOperationalEvent, climateMetrics = climateData, districtClimateRisk } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const role = user?.role || ROLES.SCHOOL_ADMIN;
   const isParentView = role === ROLES.PARENT;
@@ -2412,6 +2564,54 @@ const AlertsPage = () => {
     const ts = new Date(report?.reportedAt || report?.date || 0).getTime();
     return Number.isFinite(ts) && Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
   });
+  const avgAqi = Number(districtClimateRisk?.avgAqi ?? 120);
+  const avgTemperature = Number(districtClimateRisk?.avgTemperature ?? 34);
+  const heatAlertDays = Number(districtClimateRisk?.heatAlertDays ?? 0);
+  const waterQuality = Number(climateMetrics?.waterQuality ?? 70);
+  const wasteRecycled = Number(climateMetrics?.wasteRecycled ?? 65);
+  const humidityProxy = Math.max(30, Math.min(90, Math.round(45 + heatAlertDays * 1.2)));
+  const climateRiskByFamily = {
+    dengue: Math.max(0, Math.min(1, (Math.max(0, avgTemperature - 30) / 12) * 0.45 + (humidityProxy / 100) * 0.35 + (Math.max(0, 80 - waterQuality) / 100) * 0.2)),
+    vectorOther: Math.max(0, Math.min(1, (Math.max(0, avgTemperature - 28) / 14) * 0.4 + (humidityProxy / 100) * 0.35 + (Math.max(0, 80 - wasteRecycled) / 100) * 0.25)),
+    waterBorne: Math.max(0, Math.min(1, (Math.max(0, 85 - waterQuality) / 100) * 0.65 + (Math.max(0, 80 - wasteRecycled) / 100) * 0.25 + (heatAlertDays / 20) * 0.1)),
+    respiratory: Math.max(0, Math.min(1, (avgAqi / 320) * 0.75 + (Math.max(0, avgTemperature - 35) / 10) * 0.25)),
+    heatIllness: Math.max(0, Math.min(1, (Math.max(0, avgTemperature - 32) / 10) * 0.7 + (heatAlertDays / 20) * 0.3))
+  };
+  const climateAdjustedThreshold = (baseThreshold, climateScore) => {
+    if (climateScore >= 0.9) return Math.max(1, baseThreshold - 2);
+    if (climateScore >= 0.75) return Math.max(1, baseThreshold - 1);
+    return baseThreshold;
+  };
+  const climateTransitionSignals = [
+    avgTemperature >= 39 && heatAlertDays >= 4
+      ? {
+        title: "Heat-to-Rainfall Shift Possibility",
+        detail: "Sustained high heat can trigger convective instability; monitor for short intense rainfall windows in next 2-4 days.",
+        confidence: "Moderate"
+      }
+      : null,
+    avgTemperature >= 37 && humidityProxy >= 68
+      ? {
+        title: "High Humidity + Heat Stress",
+        detail: "Conditions may move from dry heat to humid discomfort with local rain bursts and higher vector breeding risk.",
+        confidence: "Moderate"
+      }
+      : null,
+    avgAqi >= 180 && avgTemperature >= 35
+      ? {
+        title: "Pollution Retention Risk",
+        detail: "Hot stagnant air can trap pollutants; respiratory-risk alerts should remain tightened until dispersion or rainfall improves.",
+        confidence: "High"
+      }
+      : null,
+    waterQuality <= 65 && heatAlertDays >= 3
+      ? {
+        title: "Post-Heat Water Risk Window",
+        detail: "After heat spells, first rain events can worsen contamination run-off; activate water safety checks proactively.",
+        confidence: "Moderate"
+      }
+      : null
+  ].filter(Boolean);
   const meetsDualWindowThreshold = (twoDayCount, sevenDayCount, threshold) => {
     const shortWindowSpike = Number(twoDayCount) >= Number(threshold);
     const trendSupport = Number(sevenDayCount) >= Number(threshold) + 1;
@@ -2438,8 +2638,9 @@ const AlertsPage = () => {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+  const dengueThreshold = climateAdjustedThreshold(3, climateRiskByFamily.dengue);
   const probableDengueClasses = Object.entries(dengueClassCounts2d)
-    .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, dengueClassCounts7d[className] || 0, 3))
+    .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, dengueClassCounts7d[className] || 0, dengueThreshold))
     .map(([className]) => className);
   const probableDengueStudents = studentsData.filter((student) => probableDengueClasses.includes(String(student?.class || "")));
   const myChild = isParentView ? studentsData[0] : null;
@@ -2451,6 +2652,7 @@ const AlertsPage = () => {
       reasonKeywords: ["malaria", "chikungunya", "mosquito", "joint pain"],
       symptomKeywords: ["fever", "chills", "joint pain", "body pain", "headache", "rash"],
       threshold: 3,
+      climateKey: "vectorOther",
       notifyTemplate: (studentClass) =>
         `School alert: In ${studentClass}, vector-borne-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please consult doctor if fever/chills/joint pain persists.`
     },
@@ -2460,6 +2662,7 @@ const AlertsPage = () => {
       reasonKeywords: ["diarrhea", "cholera", "typhoid", "jaundice", "hepatitis", "food poisoning", "stomach infection"],
       symptomKeywords: ["diarrhea", "loose motion", "vomiting", "stomach pain", "nausea", "dehydration", "jaundice"],
       threshold: 3,
+      climateKey: "waterBorne",
       notifyTemplate: (studentClass) =>
         `School alert: In ${studentClass}, water/food-borne-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please ensure safe hydration and consult doctor for persistent vomiting/diarrhea.`
     },
@@ -2469,6 +2672,7 @@ const AlertsPage = () => {
       reasonKeywords: ["asthma", "respiratory", "breathing", "wheezing", "pollution", "cough"],
       symptomKeywords: ["cough", "breathlessness", "wheezing", "sore throat", "chest tightness", "fever"],
       threshold: 3,
+      climateKey: "respiratory",
       notifyTemplate: (studentClass) =>
         `School alert: In ${studentClass}, respiratory-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please monitor breathing symptoms and seek doctor advice if symptoms continue.`
     },
@@ -2478,6 +2682,7 @@ const AlertsPage = () => {
       reasonKeywords: ["heat", "dehydration", "heat stroke", "heat exhaustion", "sun exposure", "fainting", "dizziness"],
       symptomKeywords: ["dehydration", "dizziness", "fainting", "headache", "vomiting", "weakness"],
       threshold: 2,
+      climateKey: "heatIllness",
       notifyTemplate: (studentClass) =>
         `School alert: In ${studentClass}, heat-illness-like symptoms show a 2-day spike with 7-day trend support. This is a precautionary warning, not diagnosis. Please focus on hydration, avoid peak heat, and consult doctor if symptoms persist.`
     }
@@ -2507,14 +2712,17 @@ const AlertsPage = () => {
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
+    const dynamicThreshold = climateAdjustedThreshold(Number(rule.threshold || 3), climateRiskByFamily[rule.climateKey] || 0);
     const probableClasses = Object.entries(classCounts2d)
-      .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, classCounts7d[className] || 0, Number(rule.threshold || 3)))
+      .filter(([className, count2d]) => meetsDualWindowThreshold(count2d, classCounts7d[className] || 0, dynamicThreshold))
       .map(([className]) => className);
     const probableStudents = studentsData.filter((student) => probableClasses.includes(String(student?.class || "")));
     return {
       ...rule,
       reportCount: matchedReports2d.length,
       weeklyTrendCount: matchedReports7d.length,
+      climateScore: climateRiskByFamily[rule.climateKey] || 0,
+      dynamicThreshold,
       probableClasses,
       probableStudents
     };
@@ -2541,6 +2749,29 @@ const AlertsPage = () => {
     fieldInspection: false,
     campSchedule: false
   });
+  const clusterByClass = symptomClusters.reduce((acc, item) => {
+    const className = String(item?.className || "Unknown Class");
+    acc[className] = (acc[className] || 0) + Number(item?.count || 0);
+    return acc;
+  }, {});
+  const classResourcePriority = attendanceSignals.classAlerts
+    .map((entry) => {
+      const className = String(entry?.className || "Unknown Class");
+      const clusterSignals = Number(clusterByClass[className] || 0);
+      const dengueWeight = probableDengueClasses.includes(className) ? 25 : 0;
+      const diseaseAlertWeight = diseaseClusterAlerts.some((alert) => alert.probableClasses.includes(className)) ? 18 : 0;
+      const attendanceWeight = Math.max(0, 100 - Number(entry?.avgAttendance || 100)) * 0.6;
+      const priorityScore = Math.max(0, Math.min(100, Math.round(clusterSignals * 7 + dengueWeight + diseaseAlertWeight + attendanceWeight)));
+      return {
+        className,
+        priorityScore,
+        clusterSignals,
+        avgAttendance: Number(entry?.avgAttendance || 0),
+        action: priorityScore >= 75 ? "Deploy camp + inspection in 24h" : priorityScore >= 55 ? "Focused screening in 48h" : "Routine monitoring + parent advisory"
+      };
+    })
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, 5);
 
   const submitLeaveSignal = () => {
     if (!leaveForm.studentId || !selectedStudent) return;
@@ -2590,6 +2821,50 @@ const AlertsPage = () => {
           </div>
         )}
       </div>
+      <div style={{ marginBottom: "12px", background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "10px", padding: "10px 12px" }}>
+        <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>Climate-Linked Alert Engine Active</p>
+        <p style={{ color: th.textMuted, fontSize: "11px" }}>
+          Thresholds auto-adjust using AQI, temperature, heat alerts, water quality and waste indicators. High climate stress lowers threshold for earlier preventive alerts.
+        </p>
+      </div>
+      <Card title="Climate Transition Predictor">
+        <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>
+          Heuristic projection for prevention planning (not an official weather forecast).
+        </p>
+        {climateTransitionSignals.map((signal, idx) => (
+          <div key={`${signal.title}-${idx}`} style={{ padding: "8px 10px", borderRadius: "8px", marginBottom: "6px", background: darkMode ? "#0f172a" : "#f8fafc", border: `1px solid ${th.cardBorder}` }}>
+            <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{signal.title}</p>
+            <p style={{ color: th.textMuted, fontSize: "11px" }}>{signal.detail}</p>
+            <p style={{ color: signal.confidence === "High" ? "#dc2626" : "#d97706", fontSize: "10px", fontWeight: 700, marginTop: "4px" }}>Confidence: {signal.confidence}</p>
+          </div>
+        ))}
+        {climateTransitionSignals.length === 0 && (
+          <p style={{ color: th.textMuted, fontSize: "12px" }}>No major climate-transition signal detected from current inputs.</p>
+        )}
+      </Card>
+      {!isParentView && classResourcePriority.length > 0 && (
+        <Card title="Resource Prioritization Engine (Class-wise)">
+          <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>
+            Prioritized from attendance drop + symptom cluster load + active disease-cluster alerts.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px" }}>
+            {classResourcePriority.map((item) => (
+              <div key={`resource-${item.className}`} style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px 10px", background: darkMode ? "#0f172a" : "#f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                <div>
+                  <p style={{ color: th.text, fontSize: "12px", fontWeight: 700 }}>{item.className}</p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>
+                    Score: {item.priorityScore}/100 • Avg attendance: {item.avgAttendance}% • Cluster signals: {item.clusterSignals}
+                  </p>
+                  <p style={{ color: th.textMuted, fontSize: "11px" }}>{item.action}</p>
+                </div>
+                <Badge color={item.priorityScore >= 75 ? "red" : item.priorityScore >= 55 ? "yellow" : "green"}>
+                  {item.priorityScore >= 75 ? "Critical" : item.priorityScore >= 55 ? "High" : "Watch"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {(probableDengueClasses.length > 0 || parentClassAlert) && (
         <Card title="Probable Dengue Cluster Alert (2-Day Spike + 7-Day Trend)">
@@ -2988,6 +3263,16 @@ const ReportsPage = () => {
   const { darkMode, generateReport, studentsData = students, healthCampsData = healthCamps, schemeCoverage = schemeData, climateMetrics = climateData, sickLeaveReports = [] } = useApp();
   const th = theme[darkMode ? "dark" : "light"];
   const outbreakSignals = buildOutbreakSignals(studentsData, sickLeaveReports);
+  const vaccinationGap = studentsData.filter((student) => !student.vaccinated).length;
+  const schemeCoveragePct = Math.round(
+    schemeCoverage.reduce((sum, item) => sum + (Number(item?.covered || 0) / Math.max(1, Number(item?.eligible || 1))), 0) /
+    Math.max(1, schemeCoverage.length) * 100
+  );
+  const sustainabilityIndex = Math.max(0, Math.min(100, Math.round(
+    Number(climateMetrics?.envScore || 60) * 0.5 +
+    Number(climateMetrics?.wasteRecycled || 60) * 0.3 +
+    Math.min(100, Number(climateMetrics?.waterQuality || 70)) * 0.2
+  )));
 
   const reports = [
     { name: "Annual School Health Report 2024-25", type: "PDF", size: "2.4 MB", date: "Feb 01, 2025", status: "Ready" },
@@ -3006,6 +3291,44 @@ const ReportsPage = () => {
           <Button icon={Plus} onClick={() => generateReport("consolidated-report.json", { students: studentsData.length, camps: healthCampsData.length, schemes: schemeCoverage, climate: climateMetrics, spreadRisk: outbreakSignals, generatedAt: new Date().toISOString() })}>Generate New Report</Button>
         </div>
       </div>
+      <Card title="Monthly Auto-Report Generator" style={{ marginBottom: "16px" }}>
+        <p style={{ color: th.textMuted, fontSize: "11px", marginBottom: "8px" }}>
+          Generates a governance-ready monthly snapshot with climate-health risk, vaccination gap, camp readiness, and action priorities.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px", marginBottom: "10px" }}>
+          <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px" }}>
+            <p style={{ color: th.textMuted, fontSize: "10px" }}>Sustainability Index</p>
+            <p style={{ color: th.text, fontSize: "14px", fontWeight: 700 }}>{sustainabilityIndex}/100</p>
+          </div>
+          <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px" }}>
+            <p style={{ color: th.textMuted, fontSize: "10px" }}>Spread Risk</p>
+            <p style={{ color: th.text, fontSize: "14px", fontWeight: 700 }}>{outbreakSignals.spreadLevel} ({outbreakSignals.triageScore}/100)</p>
+          </div>
+          <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px" }}>
+            <p style={{ color: th.textMuted, fontSize: "10px" }}>Vaccination Gap</p>
+            <p style={{ color: th.text, fontSize: "14px", fontWeight: 700 }}>{vaccinationGap} students</p>
+          </div>
+          <div style={{ border: `1px solid ${th.cardBorder}`, borderRadius: "8px", padding: "8px" }}>
+            <p style={{ color: th.textMuted, fontSize: "10px" }}>Scheme Coverage</p>
+            <p style={{ color: th.text, fontSize: "14px", fontWeight: 700 }}>{schemeCoveragePct}%</p>
+          </div>
+        </div>
+        <Button
+          icon={Download}
+          onClick={() => generateReport("monthly-sustainability-and-health-report.json", {
+            period: new Date().toLocaleString("en-IN", { month: "long", year: "numeric" }),
+            sustainabilityIndex,
+            spreadRisk: outbreakSignals,
+            vaccinationGap,
+            schemeCoveragePct,
+            climate: climateMetrics,
+            healthCamps: healthCampsData,
+            generatedAt: new Date().toISOString()
+          })}
+        >
+          Generate Monthly Sustainability Report
+        </Button>
+      </Card>
       <div style={{ background: th.card, border: `1px solid ${th.cardBorder}`, borderRadius: "12px", overflow: "hidden" }}>
         {reports.map((r, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: "16px", padding: "16px 20px", borderBottom: i < reports.length - 1 ? `1px solid ${th.cardBorder}` : "none" }}>
