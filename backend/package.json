@@ -16,6 +16,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "seed:outbreak": "ts-node scripts/seed-outbreak-signals.ts",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:smoke": "node ./scripts/smoke-test.mjs"
